@@ -1,0 +1,3 @@
+* filter=gel-filter diff=gel-filter merge=gel-filter
+[merge]
+    renormalize=true

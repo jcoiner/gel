@@ -26,7 +26,36 @@ For this particular use case, we must restrict read access in certain subtrees o
 
 ## Status
 
-It's alpha quality, unpolished, and there's no aspect of this that's guaranteed not to change in some future version. (Though I'll try to keep the in-repo ciphered format stable... especially if any actual users appear and make themselves known to me.)
+As of Jan 2019, gel is prototype quality -- a proof of concept. It is not deployed in any large installation.
+
+Any aspect of this might change in a future version, though I'll try to keep the in-repo ciphered format stable, especially if actual users make themselves known to me.
+
+## How to build and run self-test
+
+When you first pull this tree, you should be able to:
+
+```cd filter
+make filter
+make selftest
+```
+
+On Ubuntu, you might need to first install packages `libgit2-dev`, `libcrypto++-dev`, and `protobuf-compiler`.
+
+If those commands work, you have built the filter package and run its self-tests.
+
+## How to see the live demo!
+
+This repo provides some ciphered files in the `secret/` directory. On your first checkout, they will look like binary garbage. You can modify your workspace to transparently decrypt them, as follows:
+
+```cd filter
+mkdir -p ~/git-bin
+make install        # this installs the 'filter' program to ~/git-bin/filter
+```
+
+Then, open `filter/sample.git.config`. Copy its contents, paste them into your `.git/config` file, and replace the FILTER and CHECKOUT keywords with your appropriate local values.
+
+
+
 
 ## TO DO
 
