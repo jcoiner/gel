@@ -1,0 +1,93 @@
+
+syntax = "proto3";
+
+package filter;
+
+message Key {
+  // Each key must be exactly 16 bytes. Unfortunately there's no way
+  // to statically declare a fixed size in the proto description, so
+  // we'll enforce valid sizes in code.
+  //
+  // For convenience, you can give a key as a hex string in a text proto,
+  // and the Key parsing code will convert to the bytes vector internally.
+  oneof key_format_oneof {
+    bytes key_bytes = 1;
+    string key_hex = 2;
+  }
+}
+
+message KeyList {
+  // KeyList supports key rotation. The last key in the list is the
+  // most recent, and is the one we'll use for encrypting. Any key in
+  // the list is available for decrypting.
+  //
+  // @@@   IMPORTANT:
+  // @@@ NEVER remove or modify any older key, or change the index of older
+  // @@@ keys! This would break the ability of clients to decrypt older
+  // @@@ files in the repo, which were ciphered using older keys.
+  // @@@ ONLY add new keys to the END of the list, when rotating keys.
+  //
+  // Any key in the list may be used for decrypting -- this is necessary
+  // since git objects are immutable, and we'll have objects in the repo
+  // encrypted with the older keys. Removing an older key from the list
+  // would cut off legitimate clients' access to a random slice of the repo.
+  //
+  // If a key leaks, rotating the key (that is, adding a new one) only
+  // cuts off outsiders' access to future writes into the repo. Older data
+  // has already leaked.
+  //
+  // It's my belief that this list won't grow fast (one new key per few
+  // months, something like that) so it will be a long time before
+  // linear growth of the key list poses a scaling problem.
+  repeated Key key = 1;
+}
+
+// NOTE:
+//  We don't define a message type with all KeyLists.
+//  Most like, users with access to some KeyLists
+//  should also lack access to other KeyLists!
+//
+//  Instead, for the first implementation, we assume that each KeyList
+//  can be distributed as a file in a filesystem which provides
+//  authorization, and identified by a path to this file.
+
+message AccessMap {
+  // AccessMap is a recursive message, defining a trie.
+  //
+  // At a high level, AccessMap permits mapping a path within
+  // the workspace to a KeyList protecting that path's data.
+  //
+  // The KeyList is identified by a string, which tools will
+  // (at least initially) interpret as a file path leading to the KeyList.
+  //
+
+  message Entry {
+    oneof entry_oneof {
+      // This 'oneof' ensures that the trie ends when we find a keylist_id.
+      //
+      // That is, there's no way to give one keylist that protects
+      // paths 'a/b/...' and a different keylist that protects paths
+      // 'a/b/c/...'. This restriction could be relaxed in the future,
+      // if we must. For now though, keep it simple.
+      string keylist_id = 1;
+      AccessMap next = 2;
+    }
+  }
+
+  // Each key string here is one path element in the git workspace path.
+  // The key must not be '.' or '..', and must not contain '/'.
+  map<string, Entry> map = 1;
+}
+
+message CipheredFile {
+  // The index of the encryption key within the relevant KeyList.
+  int32 key_index = 1;
+
+  // Opaque, encrypted blobs
+  repeated bytes b = 2;
+
+  // Path of the file in the repo.
+  // We need this to support the 'textconv' filter, where the path
+  // isn't supplied to the filter with the file data.
+  string file_path = 3;
+}

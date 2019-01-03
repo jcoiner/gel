@@ -1,0 +1,10 @@
+aaa
+bbb
+ccc
+ddd
+eee
+<<<<<<< YOURS @ somewhere/else/file
+fff
+=======
+bb
+>>>>>>> THEIRS @ somewhere/else/file

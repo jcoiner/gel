@@ -1,0 +1,10 @@
+aaa
+bbb
+ccc
+ddd
+eee
+<<<<<<< YOURS @ secret/file
+fff
+=======
+bb
+>>>>>>> THEIRS @ secret/file

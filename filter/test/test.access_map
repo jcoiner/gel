@@ -1,0 +1,13 @@
+map: {
+  key: "secret"
+  value: {
+    # BOZO -- Should we disallow relative paths here?
+    # Requiring an absolute path would be more secure, especially
+    # since git doesn't make a guarantee about the filter's
+    # working directory.
+    #
+    # For the test though, a relative path lets us make this file
+    # portable to any working copy path:
+    keylist_id: "secret.key"
+  }
+}
