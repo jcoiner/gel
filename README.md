@@ -52,10 +52,26 @@ mkdir -p ~/git-bin
 make install        # this installs the 'filter' program to ~/git-bin/filter
 ```
 
-Then, open `filter/sample.git.config`. Copy its contents, paste them into your `.git/config` file, and replace the FILTER and CHECKOUT keywords with your appropriate local values.
+Then, open `filter/sample.git.config`. Copy its contents, paste them into your `.git/config` file, and replace the FILTER and CHECKOUT keywords with your appropriate local values: FILTER should be the path to the `filter` program you just installed, and CHECKOUT should be the path to the root of your workspace.
 
+Then, create `.git/access_map` with the following text:
 
+```map: {
+  key: "secret"
+  value: {
+    keylist_id: "CHECKOUT/filter/test/secret.key"
+  }
+}
+```
 
+... and again, replace CHECKOUT with the full path to your checkout.
+
+Now you should be in business; just do this to force the smudge filter to rerun, and the contents of `secret/` should come into focus:
+
+```cd CHECKOUT
+rm .git/index
+git checkout HEAD -- "$(git rev-parse --show-toplevel)"
+```
 
 ## TO DO
 
