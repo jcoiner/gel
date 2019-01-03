@@ -77,6 +77,18 @@ rm .git/index
 git checkout HEAD -- "$(git rev-parse --show-toplevel)"
 ```
 
+### Cool! How did THAT happen?
+
+The `.gitattributes` file in the checkout root names `gel-filter` as the filter to use for smudge, clean, diff, and merge operations on all files.
+
+The text you created in `.git/config` defines what `gel-filter` means, in the context of smudge, clean, diff, and merge. In each case, it means calling the filter binary with some arguments.
+
+One of those arguments is `-access_map`. This file maps in-workspace paths (like `secret/`) to a key (really a set of keys, because key rotation...) Any directory for which a key mapping exists shall be encrypted; other directories will go as plaintext. The sample access_map only has a single mapping for the `secret/` directory, but you could have any number of protected directories and a unique key for each one. (Note that the root dir cannot be ciphered, as that's where the `.gitattributes` file is, and ciphering that would lead to a bootstrapping problem.)
+
+The file formats used by gel are all [protobufs](https://developers.google.com/protocol-buffers/) which, if you don't know about them, are well worth learning. Protobufs are _the best_ data-serialization system, and also the best system for creating custom text file formats. You just document the schema, and the protobuf compiler writes all the code to translate between data structures in your favoriate language, to or from files, which can be human-readable text or compact binaries.
+
+The schemas used by the gel filter are defined in `filter/filter.proto`. The `-access_map` file is a text proto of type AccessMap, the key file is a text proto of type KeyList. Ciphered repo entries are binary protos of type CipheredFile, plus a short magic prefix to allow sniffing them.
+
 ## TO DO
 
 *Security Review* - I'm not a security expert. Are there any weaknesses in the ciphered format used here? TBD. Your comments would be welcome.
@@ -90,3 +102,5 @@ git checkout HEAD -- "$(git rev-parse --show-toplevel)"
 ## Bugs / Limitations
 
 The git hooks allow us to cipher file contents only. Everything else is cleartext in the repo, including filenames, branch names, the identity of committers, and comment history. All this is visible to any observer with repo access; they don't need any decryption key to see it.
+
+The encrypted format is not tamper-proof. Without the key, an attacker could remove, rearrange, or duplicate sections of the ciphered file, and produce a new valid ciphered file that will still decrypt without error. I didn't think it was important for the format to be tamper-proof, since git itself will record the identities of anyone modifying file contents.
