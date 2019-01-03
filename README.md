@@ -34,7 +34,8 @@ Any aspect of this might change in a future version, though I'll try to keep the
 
 When you first pull this tree, you should be able to:
 
-```cd filter
+```
+cd filter
 make filter
 make selftest
 ```
@@ -47,7 +48,8 @@ If those commands work, you have built the filter package and run its self-tests
 
 This repo provides some ciphered files in the `secret/` directory. On your first checkout, they will look like binary garbage. You can modify your workspace to transparently decrypt them, as follows:
 
-```cd filter
+```
+cd filter
 mkdir -p ~/git-bin
 make install        # this installs the 'filter' program to ~/git-bin/filter
 ```
@@ -56,7 +58,8 @@ Then, open `filter/sample.git.config`. Copy its contents, paste them into your `
 
 Then, create `.git/access_map` with the following text:
 
-```map: {
+```
+map: {
   key: "secret"
   value: {
     keylist_id: "CHECKOUT/filter/test/secret.key"
@@ -68,7 +71,8 @@ Then, create `.git/access_map` with the following text:
 
 Now you should be in business; just do this to force the smudge filter to rerun, and the contents of `secret/` should come into focus:
 
-```cd CHECKOUT
+```
+cd CHECKOUT
 rm .git/index
 git checkout HEAD -- "$(git rev-parse --show-toplevel)"
 ```
