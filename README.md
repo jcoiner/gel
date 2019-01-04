@@ -18,7 +18,7 @@ The encryption algorithm has the property that local changes in the plaintext fi
 
 ## Why do this?
 
-The primary use case is to support a large corporate environment, where we'd like to deploy a monorepo at at scale, with thousands of users and millions of files. (Monorepos are awesome, for reasons that are beyond the scope of this document.)
+The primary use case is to support a large corporate environment, where we'd like to deploy a monorepo at scale, with thousands of users and millions of files. (Monorepos are awesome, for reasons that are beyond the scope of this document.)
 
 Git can scale to this size, with the help of Microsoft's open source [VFSForGit](https://github.com/Microsoft/VFSForGit) filesystem.
 
@@ -85,7 +85,7 @@ The text you created in `.git/config` defines what `gel-filter` means, in the co
 
 One of those arguments is `-access_map`. This file maps in-workspace paths (like `secret/`) to a key (really a set of keys, because key rotation...) Any directory for which a key mapping exists shall be encrypted; other directories will go as plaintext. The sample access_map only has a single mapping for the `secret/` directory, but you could have any number of protected directories and a unique key for each one. (Note that the root dir cannot be ciphered, as that's where the `.gitattributes` file is, and ciphering that would lead to a bootstrapping problem.)
 
-The file formats used by gel are all [protobufs](https://developers.google.com/protocol-buffers/) which, if you don't know about them, are well worth learning. Protobufs are _the best_ data-serialization system, and also the best system for creating custom text file formats. You just document the schema, and the protobuf compiler writes all the code to translate between data structures in your favoriate language, to or from files, which can be human-readable text or compact binaries.
+The file formats used by gel are all [protobufs](https://developers.google.com/protocol-buffers/) which, if you don't know about them, are well worth learning. Protobufs are _the best_ data-serialization system, and also the best system for creating custom text file formats. You just document the schema, and the protobuf compiler writes all the code to translate between data structures in your favorite language, to and from human-readable text files, to and from compact binaries.
 
 The schemas used by the gel filter are defined in `filter/filter.proto`. The `-access_map` file is a text proto of type AccessMap, the key file is a text proto of type KeyList. Ciphered repo entries are binary protos of type CipheredFile, plus a short magic prefix to allow sniffing them.
 
