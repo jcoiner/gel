@@ -87,7 +87,7 @@ One of those arguments is `-access_map`. This file maps in-workspace paths (like
 
 The file formats used by gel are all [protobufs](https://developers.google.com/protocol-buffers/) which, if you don't know about them, are well worth learning. Protobufs are _the best_ data-serialization system, and also the best system for creating custom text file formats. You just document the schema, and the protobuf compiler writes all the code to translate between data structures in your favorite language, to and from human-readable text files, to and from compact binaries.
 
-The schemas used by the gel filter are defined in `filter/filter.proto`. The `-access_map` file is a text proto of type AccessMap, the key file is a text proto of type KeyList. Ciphered repo entries are binary protos of type CipheredFile, plus a short magic prefix to allow sniffing them.
+The schemas used by the gel filter are defined in `filter/filter.proto`. The `-access_map` file is a text proto of type AccessMap, the key file is a text proto of type KeyList. Ciphered repo entries are binary protos of type CipheredFile.
 
 ## TO DO
 
@@ -103,4 +103,4 @@ The schemas used by the gel filter are defined in `filter/filter.proto`. The `-a
 
 The git hooks allow us to cipher file contents only. Everything else is cleartext in the repo, including filenames, branch names, the identity of committers, and comment history. All this is visible to any observer with repo access; they don't need any decryption key to see it.
 
-The encrypted format is not tamper-proof. Without the key, an attacker could remove, rearrange, or duplicate sections of the ciphered file, and produce a new valid ciphered file that will still decrypt without error. I didn't think it was important for the format to be tamper-proof, since git itself will record the identities of anyone modifying file contents.
+The encrypted format is not tamper-proof. Without the key, an attacker could remove, rearrange, or duplicate sections of the ciphered file, and produce a new valid ciphered file that will still decrypt without error. I don't think tampering is likely to be a concern, since git itself will record the identities of anyone modifying file contents.
