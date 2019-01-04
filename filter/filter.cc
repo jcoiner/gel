@@ -113,6 +113,27 @@ write_whole_file(const string& filename, const string& contents) {
 }
 
 static void
+check_access_map(const filter::AccessMap& map) {
+    // Check that each path component given in AccessMap appears
+    // to be legal.
+    //
+    // We don't actually check if we can read the key files, or
+    // that those parse. Since we don't expect all users to have
+    // access to all keys, it's not an error anyway.
+    for (const auto& it : map.map()) {
+        const string& path = it.first;
+        FLT_ASSERT(path != ".");
+        FLT_ASSERT(path != "..");
+        FLT_ASSERT(NULL == strstr(path.c_str(), "/"));
+
+        const auto& entry = it.second;
+        if (entry.entry_oneof_case() == filter::AccessMap_Entry::kNext) {
+            check_access_map(entry.next());
+        }
+    }
+}
+
+static void
 read_access_map(const string& map_file) {
     FLT_ASSERT(!access_map);
     
@@ -125,6 +146,9 @@ read_access_map(const string& map_file) {
     //  since it's reasonably likely to fail on user input
     FLT_ASSERT(google::protobuf::TextFormat::
                ParseFromString(map_file_text, access_map.get()));
+
+    // Confirm that AccessMap is well-formed.
+    check_access_map( *(access_map.get()) );
 }
 
 static const filter::KeyList* readKeyList(const string& keylist_file) {
@@ -371,8 +395,14 @@ hash_file_path_to_iv(const string& file_path,
 
 static bool
 has_magic_prefix(const string& contents) {
-    if ( (contents.length() >= MAGIC_NAME_LEN) &&
-         (0 == strncmp(contents.data(), MAGIC_NAME, MAGIC_NAME_LEN)) ) {
+    filter::CipheredFile header_only;
+    header_only.set_magic_header(MAGIC_NAME, MAGIC_NAME_LEN);
+    string header_bytes;
+    header_only.SerializeToString(&header_bytes);
+
+    if ( (contents.length() >= header_bytes.size()) &&
+         (0 == strncmp(contents.data(),
+                       header_bytes.data(), header_bytes.size())) ) {
         return true;
     }
     return false;
@@ -430,6 +460,7 @@ void filter_clean(const string& file_path,
 
     filter::CipheredFile ciphered;
     unsigned key_index = key_list->key_size() - 1;
+    ciphered.set_magic_header(MAGIC_NAME, MAGIC_NAME_LEN);
     ciphered.set_key_index(key_index);
     ciphered.set_file_path(file_path);
 
@@ -458,10 +489,6 @@ void filter_clean(const string& file_path,
         ciphered.add_b(ciphered_blob);
     }
 
-    // Prepend the magic name prefix.
-    *new_contents = MAGIC_NAME;
-
-    string tmp;
     // Q) Does the proto library guarantee that fields will be written
     //    in field-index order? Does it guarantee that repeated elements
     //    are written in logical order? We need this stability, to avoid
@@ -474,13 +501,7 @@ void filter_clean(const string& file_path,
     //    Whereas, repeated fields must appear in order in serialized protos,
     //    that is a property of the format.
     //
-    ciphered.SerializeToString(&tmp);
-
-    // TODO: there are lots of dumb copies here, and this one is pretty dumb,
-    // we copy the whole ciphered file just to prepend the header. Blah.
-    // There could be fewer, for example, if we had a Cord type
-    // we could return a Cord here. Alternatively, use an ostream?
-    new_contents->append(tmp);
+    ciphered.SerializeToString(new_contents);
 }
 
 static void
@@ -496,12 +517,8 @@ filter_smudge(const string& clean_contents,
         return;
     }
 
-    // TODO. Fix this extra copy.
-    string proto_str;
-    proto_str.append(clean_contents.data() + MAGIC_NAME_LEN,
-                     clean_contents.size() - MAGIC_NAME_LEN);
     filter::CipheredFile ciphered;
-    FLT_ASSERT(ciphered.ParseFromString(proto_str));
+    FLT_ASSERT(ciphered.ParseFromString(clean_contents));
 
     // If we're running in smudge filter context where we expect
     // a certain file path, it should match:

@@ -80,14 +80,19 @@ message AccessMap {
 }
 
 message CipheredFile {
+  // A short, magic, constant string.
+  // This is always first in the serialized file, it allows us to
+  // sniff the file type from a few leading bytes.
+  string magic_header = 1;
+
   // The index of the encryption key within the relevant KeyList.
-  int32 key_index = 1;
+  int32 key_index = 2;
 
   // Opaque, encrypted blobs
-  repeated bytes b = 2;
+  repeated bytes b = 3;
 
   // Path of the file in the repo.
   // We need this to support the 'textconv' filter, where the path
   // isn't supplied to the filter with the file data.
-  string file_path = 3;
+  string file_path = 4;
 }
