@@ -89,6 +89,19 @@ The file formats used by gel are all [protobufs](https://developers.google.com/p
 
 The schemas used by the gel filter are defined in `filter/filter.proto`. The `-access_map` file is a text proto of type AccessMap, the key file is a text proto of type KeyList. Ciphered repo entries are binary protos of type CipheredFile.
 
+## Cipher Details
+
+How do we ensure that local edits to the plaintext file result in local diffs in the ciphered file?
+
+The cipher works as follows:
+ * For each file, start with an IV (initialization vector) which is based on a hash of the file's path in the repo. This should be a unique value for each file.
+ * Split the plaintext into variable sized "blobs", each of which must be at least 64 bytes. A trigger function in `findBlobStarts()` decides where to split the plaintext. At each position in the file, the trigger function looks backward at a span of the previous 64 bytes, and hashes those bytes. (It also hashes in the unique IV for the file.) The hash has a 1/128 chance of selecting a new blob start.
+   The trigger function will tend to identify a stable set of blobs, even after small edits in a large file, so the ciphered file can deltify nicely.
+ * Each blob is independently run through an AES CBC cipher, seeded with the file's IV.
+ * Ciphered blobs are packed into the CipheredFile proto.
+
+It's possible for an attacker to recognize repeated sections within a single file. Though it should be impossible for them to recognize sections common to two different files, since the file path is part of the IV and also part of the hash function used to split blobs. Two identical files with different paths should produce entirely different ciphertexts, even the sizes of the blobs should have no relationship.
+
 ## TO DO
 
 *Security Review* - I'm not a security expert. Are there any weaknesses in the ciphered format used here? TBD. Your comments would be welcome.
