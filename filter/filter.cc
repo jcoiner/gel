@@ -347,16 +347,18 @@ findBlobStarts(const string& file_path,
 // Appends to |result| and does not require |result| to be
 // initially empty.
 static void
-decrypt_blob(const uint8_t* key,  // 16 bytes
-             const uint8_t* iv,   // 16 bytes
+decrypt_blob(const string& key,  // 16 bytes
+             const string& iv,   // 16 bytes
              const string* blob,
              string* result) {
+    FLT_ASSERT(16 == key.size());
+    FLT_ASSERT(16 == iv.size());
     FLT_ASSERT(16 == CryptoPP::AES::DEFAULT_KEYLENGTH);
 
     CryptoPP::AES::Decryption aesDecryption
-        (key, CryptoPP::AES::DEFAULT_KEYLENGTH);
+        (toBytesConst(key.data()), CryptoPP::AES::DEFAULT_KEYLENGTH);
     CryptoPP::CBC_Mode_ExternalCipher::Decryption cbcDecryption
-        (aesDecryption, iv);
+        (aesDecryption, toBytesConst(iv.data()));
 
     CryptoPP::StreamTransformationFilter stfDecryptor
         (cbcDecryption, new CryptoPP::StringSink(*result));
@@ -365,10 +367,12 @@ decrypt_blob(const uint8_t* key,  // 16 bytes
 }
 
 static void
-encrypt_blob(const uint8_t* key,  // 16 bytes
-             const uint8_t* iv,   // 16 bytes
+encrypt_blob(const string& key,  // 16 bytes
+             const string& iv,   // 16 bytes
              const uint8_t* plaintext, size_t plaintext_sz,
              string* ciphered_blob) {
+    FLT_ASSERT(16 == key.size());
+    FLT_ASSERT(16 == iv.size());
     FLT_ASSERT(ciphered_blob->empty());
 
     FLT_ASSERT(16 == CryptoPP::AES::DEFAULT_KEYLENGTH);
@@ -377,9 +381,9 @@ encrypt_blob(const uint8_t* key,  // 16 bytes
     // https://stackoverflow.com/questions/12306956/example-of-aes-using-crypto
 
     CryptoPP::AES::Encryption aesEncryption
-        (key, CryptoPP::AES::DEFAULT_KEYLENGTH);
+        (toBytesConst(key.data()), CryptoPP::AES::DEFAULT_KEYLENGTH);
     CryptoPP::CBC_Mode_ExternalCipher::Encryption cbcEncryption
-        (aesEncryption, iv);
+        (aesEncryption, toBytesConst(iv.data()));
     CryptoPP::StreamTransformationFilter stfEncryptor
         (cbcEncryption, new CryptoPP::StringSink(*ciphered_blob));
     stfEncryptor.Put(plaintext, plaintext_sz);
@@ -388,9 +392,11 @@ encrypt_blob(const uint8_t* key,  // 16 bytes
 
 static void
 hash_file_path_to_iv(const string& file_path,
-                     uint8_t* iv /* 16 bytes */) {
+                     string* iv /* 16 bytes */) {
+    char buf[16];
     CryptoPP::SHA3(16).CalculateDigest
-        (iv, toBytesConst(file_path.data()), file_path.size());
+        (toBytes(buf), toBytesConst(file_path.data()), file_path.size());
+    iv->assign(buf, 16);
 }
 
 static bool
@@ -454,9 +460,8 @@ void filter_clean(const string& file_path,
     }
 
     // Compute the IV for this file.
-    uint8_t file_iv[16];
-    memset(file_iv, 0, 16);
-    hash_file_path_to_iv(file_path, file_iv);
+    string file_iv;
+    hash_file_path_to_iv(file_path, &file_iv);
 
     filter::CipheredFile ciphered;
     unsigned key_index = key_list->key_size() - 1;
@@ -483,7 +488,7 @@ void filter_clean(const string& file_path,
         fwrite(contents.data() + offset, 1, len, stdout);
 #endif
         string ciphered_blob;
-        encrypt_blob(toBytesConst(key.data()), file_iv,
+        encrypt_blob(key, file_iv,
                      toBytesConst(contents.data() + offset), len,
                      &ciphered_blob);
         ciphered.add_b(ciphered_blob);
@@ -535,16 +540,14 @@ filter_smudge(const string& clean_contents,
     FLT_ASSERT(ciphered.key_index() < key_list->key_size());
 
     // Compute the IV for this file
-    uint8_t file_iv[16];
-    memset(file_iv, 0, 16);
-    hash_file_path_to_iv(ciphered.file_path(), file_iv);
+    string file_iv;
+    hash_file_path_to_iv(ciphered.file_path(), &file_iv);
 
     const string& key = key_list->key(ciphered.key_index()).key_bytes();
     FLT_ASSERT(key.size() == 16);
 
     for (const string& blob : ciphered.b()) {
-        decrypt_blob(toBytesConst(key.data()), file_iv,
-                     &blob, result);
+        decrypt_blob(key, file_iv, &blob, result);
     }
 }
 
@@ -601,6 +604,8 @@ filter_merge(const string& merge_ancestor_file,
     if (status != 0) {
         // Q: Do we get here on a run-of-the-mill conflict?
         //    If so we don't want to exit yet...
+        // A: Empirically: no we don't get here in a typical
+        //    conflict case.
         fprintf(stderr, "filter: ERROR: 3way merge failed "
                 "at git_merge_file(). stop.\n");
 
