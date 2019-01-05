@@ -99,7 +99,7 @@ The cipher works as follows:
  * Each blob is independently run through an AES CBC cipher. The cipher is seeded with an IV derived from a hash of the path to the file; the hash of the blob contents; and the count of blobs seen so far with the same hash. (The last term ensures that repeated, identical plaintext blobs will use different IVs, so no relationship will be observable to someone without the key.)
  * Ciphered blobs are packed into the CipheredFile proto.
 
-It should be impossible for at attacker to recognize sections that repeat in the same file, or sections which are common to two different files, since the file path is part of each IV and also part of the hash function used to split blobs. Two identical files with different paths should produce entirely different ciphertexts, even the sizes of the blobs should have no relationship.
+An attacker should be unable to recognize sections that repeat in the same file, or sections which are common to two different files, since the file path is part of each IV and also part of the hash function used to split blobs. Two identical files with different paths should produce entirely different ciphertexts, even the signature of blob sizes should show no relationship.
 
 ## TO DO
 
