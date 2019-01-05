@@ -44,7 +44,7 @@ message KeyList {
 
 // NOTE:
 //  We don't define a message type with all KeyLists.
-//  Most like, users with access to some KeyLists
+//  Most likely, users with access to some KeyLists
 //  should also lack access to other KeyLists!
 //
 //  Instead, for the first implementation, we assume that each KeyList
@@ -81,7 +81,7 @@ message AccessMap {
 
 message BlobIvRaw {
   // NOTE -- this message type is only used internally in filter.cc,
-  // it's never written out.
+  // it's never written out or read in.
   fixed64 hash = 1;
   int32 count = 2;
   bytes file_iv = 3;

@@ -49,7 +49,35 @@ using std::unordered_map;
 using std::vector;
 
 void usage() {
-    fprintf(stderr, "BOZO usage...\n");
+    fprintf(stderr, "This is the Git Encryption Layer `filter' program.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Usage:\n");
+    fprintf(stderr, " > filter -mode [ clean | smudge | diff | merge |\n");
+    fprintf(stderr, "                  selftest | selftest_regold ]\n");
+    fprintf(stderr, "     -access_map <file>\n");
+    fprintf(stderr, "     -file       <repository_path>\n");
+    fprintf(stderr, "     -in         <file>\n");
+    fprintf(stderr, "     -ancestor   <file>\n");
+    fprintf(stderr, "     -ours       <file>\n");
+    fprintf(stderr, "     -theirs     <file>\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Arguments:\n");
+    fprintf(stderr, "  -access_map : Must point to a file containing a text-format\n");
+    fprintf(stderr, "                proto message of type AccessMap. This gives the\n");
+    fprintf(stderr, "                path-to-key mapping for the current repo.\n");
+    fprintf(stderr, "  -file       : Identifies the file we'll be working on by its\n");
+    fprintf(stderr, "                relative path in the repo. Needed for all modes\n");
+    fprintf(stderr, "                except the selftest modes.\n");
+    fprintf(stderr, "  -in         : Temp file containing our input; for diff mode only.\n");
+    fprintf(stderr, "  -ancestor,\n");
+    fprintf(stderr, "  -ours,\n");
+    fprintf(stderr, "  -theirs     : For merge mode only, these are three temp files that\n");
+    fprintf(stderr, "                initially contain the inputs for the merge. Output\n");
+    fprintf(stderr, "                will also be written to the 'ours' file.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "NOTE that this program is not normally user-facing! It's intended\n");
+    fprintf(stderr, "to be integrated with git, and normally git should call it. For more info:\n");
+    fprintf(stderr, "  https://github.com/jcoiner/gel \n");
 }
 
 static unique_ptr<filter::AccessMap> access_map;
@@ -582,9 +610,9 @@ filter_smudge(const string& clean_contents,
         FLT_ASSERT(file_path == ciphered.file_path());
     }
 
-    // Now we can finally look up the key, based on file path
     const filter::KeyList* key_list = findKeyList(ciphered.file_path());
     if (nullptr == key_list) {
+        // TODO reduce copyism
         *result = clean_contents;
         return;
     }
@@ -1022,6 +1050,12 @@ int main(int argc, char** argv) {
     }
 
     for (int i = 1; i < argc; i++) {
+        if ( (0 == strcmp("-h", argv[i])) ||
+             (0 == strcmp("-help", argv[i])) ||
+             (0 == strcmp("--help", argv[i])) ) {
+            usage();
+            exit(EXIT_SUCCESS);
+        }
         if (0 == strcmp("-mode", argv[i])) {
             i++;
             if (i >= argc) {
