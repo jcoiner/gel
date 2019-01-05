@@ -468,6 +468,37 @@ has_magic_prefix(const string& contents) {
     return false;
 }
 
+class StringOut {
+    // Represents a string, whose storage may be live here within
+    // this object, or it may be stored outside! Useful for avoiding
+    // string copies...
+public:
+    StringOut() : external_(nullptr) {}
+    StringOut(const string* external)
+        : external_(external) {}
+
+    // We never want to do a deep copy of this type;
+    // if we do, we've failed to avoid a string copy
+    // which was the whole point of StringOut...
+    StringOut(const StringOut&) = delete;
+    StringOut& operator= (const StringOut&) = delete;
+
+    // Let the compiler write its default move ctor.
+    StringOut(StringOut &&) = default;
+
+    const string& get() const {
+        return external_ ? *external_ : internal_;
+    }
+    string* mutable_string() {
+        FLT_ASSERT(external_ == nullptr);
+        return &internal_;
+    }
+
+private:
+    const string* external_;
+    string internal_;
+};
+
 // filter_clean: top level routine implementing the encrypting "clean" filter.
 //
 // This routine is idempotent, since git requires its clean and smudge filters
@@ -490,12 +521,9 @@ has_magic_prefix(const string& contents) {
 // data. We'll trigger at common points, even in slightly different revs of the
 // same file, so many of the ciphered blocks will be common across revs.
 //
-static
-void filter_clean(const string& file_path,
-                  const string& contents,
-                  string* new_contents) {
-    FLT_ASSERT(new_contents->empty());
-
+static StringOut
+filter_clean(const string& file_path,
+             const string& contents) {
     // Can we operate the same way on either text or binary files?
     // For now assume we can.
     // Q) Will this confuse git, if the plaintext file is binary but the
@@ -503,14 +531,12 @@ void filter_clean(const string& file_path,
 
     const filter::KeyList* key_list = findKeyList(file_path);
     if (nullptr == key_list) {
-        *new_contents = contents;
-        return;
+        return StringOut(&contents);
     }
 
     // If the file has already been ciphered, pass through.
     if (has_magic_prefix(contents)) {
-        *new_contents = contents;
-        return;
+        return StringOut(&contents);
     }
 
     // Compute the IV for this file.
@@ -590,20 +616,17 @@ void filter_clean(const string& file_path,
     //    Whereas, repeated fields must appear in order in serialized protos,
     //    that is a property of the format.
     //
-    ciphered.SerializeToString(new_contents);
+    StringOut out;
+    ciphered.SerializeToString(out.mutable_string());
+    return out;
 }
 
-static void
+static StringOut
 filter_smudge(const string& clean_contents,
-              const string& file_path, // present for smudge; empty for diff
-              string* result) {
-    FLT_ASSERT(result->empty());
-
+              const string& file_path /* present for smudge; empty for diff */) {
     if (!has_magic_prefix(clean_contents)) {
         // If file wasn't ciphered, pass it through.
-        // TODO reduce copyism.
-        *result = clean_contents;
-        return;
+        return StringOut(&clean_contents);
     }
 
     filter::CipheredFile ciphered;
@@ -617,24 +640,23 @@ filter_smudge(const string& clean_contents,
 
     const filter::KeyList* key_list = findKeyList(ciphered.file_path());
     if (nullptr == key_list) {
-        // TODO reduce copyism
-        *result = clean_contents;
-        return;
+        return StringOut(&clean_contents);
     }
     FLT_ASSERT(ciphered.key_index() < key_list->key_size());
 
     const string& key = key_list->key(ciphered.key_index()).key_bytes();
     FLT_ASSERT(key.size() == 16);
 
+    StringOut out;
     for (const auto& blob : ciphered.blob()) {
-        decrypt_blob(key, blob, result);
+        decrypt_blob(key, blob, out.mutable_string());
     }
+    return out;
 }
 
-static void
-filter_diff(const string& clean_contents,
-            string* result) {
-    filter_smudge(clean_contents, "", result);
+static StringOut
+filter_diff(const string& clean_contents) {
+    return filter_smudge(clean_contents, "");
 }
 
 static void
@@ -653,14 +675,13 @@ filter_merge(const string& merge_ancestor_file,
              const string& merge_theirs_file,
              const string& file_path) {
     string anc, ours, theirs;
-    string plain_anc, plain_ours, plain_theirs;
     read_whole_file(merge_ancestor_file.c_str(), &anc);
     read_whole_file(merge_ours_file.c_str(),     &ours);
     read_whole_file(merge_theirs_file.c_str(),   &theirs);
 
-    filter_smudge(anc,    file_path, &plain_anc);
-    filter_smudge(ours,   file_path, &plain_ours);
-    filter_smudge(theirs, file_path, &plain_theirs);
+    StringOut plain_anc    = filter_smudge(anc,    file_path);
+    StringOut plain_ours   = filter_smudge(ours,   file_path);
+    StringOut plain_theirs = filter_smudge(theirs, file_path);
 
     git_merge_file_options fopts;
     git_merge_file_init_options(&fopts, GIT_MERGE_FILE_OPTIONS_VERSION);
@@ -675,9 +696,9 @@ filter_merge(const string& merge_ancestor_file,
     git_merge_file_input anci;
     git_merge_file_input oursi;
     git_merge_file_input theirsi;
-    setup_merge_input(plain_anc,    &anci);
-    setup_merge_input(plain_ours,   &oursi);
-    setup_merge_input(plain_theirs, &theirsi);
+    setup_merge_input(plain_anc.get(),    &anci);
+    setup_merge_input(plain_ours.get(),   &oursi);
+    setup_merge_input(plain_theirs.get(), &theirsi);
 
     git_merge_file_result result;
     int status = git_merge_file(&result, &anci, &oursi, &theirsi, &fopts);
@@ -694,10 +715,12 @@ filter_merge(const string& merge_ancestor_file,
         return false;
     }
 
-    string merged_plain(result.ptr, result.len); // extra copy... sorry
-    string merged;
-    filter_clean(file_path, merged_plain, &merged);
-    write_whole_file(merge_ours_file.c_str(), merged);
+    // There's an extra copy here. Maybe fix this. Or maybe don't,
+    // since merge should be less common than smudge/clean...
+    string merged_plain(result.ptr, result.len);
+
+    StringOut merged = filter_clean(file_path, merged_plain);
+    write_whole_file(merge_ours_file.c_str(), merged.get());
 
     bool return_status = result.automergeable;
     git_merge_file_result_free(&result);
@@ -709,45 +732,31 @@ test_round_trip(const char* plaintext_filename) {
     string plaintext;
     read_whole_file(plaintext_filename, &plaintext);
 
-    string ciphered_text;
     string path("secret/file");
-    filter_clean(path,
-                 plaintext,
-                 &ciphered_text);
+    StringOut ciphered_text = filter_clean(path, plaintext);
 
     string cipher_filename;
     cipher_filename.append("out/");
     cipher_filename.append(plaintext_filename);
     cipher_filename.append(".clean");
-    write_whole_file(cipher_filename.c_str(), ciphered_text);
+    write_whole_file(cipher_filename.c_str(), ciphered_text.get());
 
     // Test idempotency of clean operation
-    string doubly_ciphered_text;
-    filter_clean(path,
-                 ciphered_text,
-                 &doubly_ciphered_text);
-    FLT_ASSERT(doubly_ciphered_text == ciphered_text);
+    StringOut doubly_ciphered_text = filter_clean(path, ciphered_text.get());
+    FLT_ASSERT(doubly_ciphered_text.get() == ciphered_text.get());
 
     // Smudge (decrypt) the cleaned (ciphered) contents
-    string plaintext_smudge_out;
-    filter_smudge(ciphered_text,
-                  path,
-                  &plaintext_smudge_out);
-    FLT_ASSERT(plaintext_smudge_out == plaintext);
+    StringOut plaintext_smudge_out = filter_smudge(ciphered_text.get(), path);
+    FLT_ASSERT(plaintext_smudge_out.get() == plaintext);
 
     // Test the diff (decrypt) routine which is slightly
     // different than the smudge routine
-    string plaintext_diff_out;
-    filter_diff(ciphered_text,
-                &plaintext_diff_out);
-    FLT_ASSERT(plaintext_diff_out == plaintext);
+    StringOut plaintext_diff_out = filter_diff(ciphered_text.get());
+    FLT_ASSERT(plaintext_diff_out.get() == plaintext);
 
     // Test idempotency of smudge operation
-    string doubly_smudged_text;
-    filter_smudge(plaintext,
-                  path,
-                  &doubly_smudged_text);
-    FLT_ASSERT(doubly_smudged_text == plaintext);
+    StringOut doubly_smudged_text = filter_smudge(plaintext, path);
+    FLT_ASSERT(doubly_smudged_text.get() == plaintext);
 
     printf("round_trip OK: %s\n", plaintext_filename);
 }
@@ -765,10 +774,9 @@ static string test_merge_input(const string& in_file,
     tmp_file.append("out/");
     tmp_file.append(in_file);
 
-    string repo_contents;
-    filter_clean(fake_path, in_text, &repo_contents);
+    StringOut repo_contents = filter_clean(fake_path, in_text);
 
-    write_whole_file(tmp_file, repo_contents);
+    write_whole_file(tmp_file, repo_contents.get());
     return tmp_file;
 }
 
@@ -805,14 +813,13 @@ static void test_merge(const string& anc_file,
     }
 
     // Possibly decipher the merge result
-    string merge_result_plaintext;
-    filter_smudge(merge_result, fake_path, &merge_result_plaintext);
+    StringOut merge_result_plaintext = filter_smudge(merge_result, fake_path);
 
     if (regold) {
-        write_whole_file(expected_result_file, merge_result_plaintext);
+        write_whole_file(expected_result_file, merge_result_plaintext.get());
     } else {
         read_whole_file(expected_result_file, &merge_result_expect);
-        FLT_ASSERT(merge_result_plaintext == merge_result_expect);
+        FLT_ASSERT(merge_result_plaintext.get() == merge_result_expect);
     }
 
     printf("test_merge OK: expect_auto_merge_ok = %s, apply_crypto = %s\n",
@@ -875,14 +882,11 @@ test_stable_smudge(const string& old_ciphered_file,
     string ciphered_text;
     read_whole_file(old_ciphered_file, &ciphered_text);
 
-    string plaintext_out;
-    filter_smudge(ciphered_text,
-                  "secret/file",
-                  &plaintext_out);
+    StringOut plaintext_out = filter_smudge(ciphered_text, "secret/file");
 
     string expect_plaintext;
     read_whole_file(expect_plaintext_file, &expect_plaintext);
-    FLT_ASSERT(expect_plaintext == plaintext_out);
+    FLT_ASSERT(expect_plaintext == plaintext_out.get());
 }
 
 static void
@@ -898,12 +902,11 @@ test_semantic_security() {
         // This text has at least one blob trigger:
         plaintext.append("Though the spirit of the proverb had been expressed previously, the modern saying appeared first in James Howell's Proverbs in English, Italian, French and Spanish (1659),[1] and was included in later collections of proverbs. It also appears in Howell's Paroimiographia (1659), p. 12. ");
     }
-    string ciphertext;
-    filter_clean("secret/file", plaintext, &ciphertext);
+    StringOut ciphertext = filter_clean("secret/file", plaintext);
 
     // Ensure that no two blobs have the same IV.
     filter::CipheredFile ciphered;
-    FLT_ASSERT(ciphered.ParseFromString(ciphertext));
+    FLT_ASSERT(ciphered.ParseFromString(ciphertext.get()));
 
     std::unordered_set<string> ivs;
     unsigned ct = 0;
@@ -1124,32 +1127,32 @@ int main(int argc, char** argv) {
         string contents;
         read_whole_file(stdin, &contents);
 
-        // JPC: design this API so we can keep it when we switch to
+        // jcoiner: design this API so we can keep it when we switch to
         // a 'process' type filter (long lived process)
-        string new_contents;
-        filter_clean(file_path, contents, &new_contents);
-        if (!new_contents.empty()) {
-            fwrite(new_contents.data(), new_contents.size(), 1, stdout);
+        StringOut new_contents = filter_clean(file_path, contents);
+        if (!new_contents.get().empty()) {
+            fwrite(new_contents.get().data(),
+                   new_contents.get().size(), 1, stdout);
         }
         break;
     }
     case SMUDGE: {
         // Smudge will decrypt files that were stored encrypted.
         //
-        string in, out;
+        string in;
         read_whole_file(stdin, &in);
-        filter_smudge(in, file_path, &out);
-        if (!out.empty()) {
-            fwrite(out.data(), out.size(), 1, stdout);
+        StringOut out = filter_smudge(in, file_path);
+        if (!out.get().empty()) {
+            fwrite(out.get().data(), out.get().size(), 1, stdout);
         }
         break;
     }
     case DIFF: {
-        string in, out;
+        string in;
         read_whole_file(input_file.c_str(), &in);
-        filter_diff(in, &out);
-        if (!out.empty()) {
-            fwrite(out.data(), out.size(), 1, stdout);
+        StringOut out = filter_diff(in);
+        if (!out.get().empty()) {
+            fwrite(out.get().data(), out.get().size(), 1, stdout);
         }
         break;
     }
