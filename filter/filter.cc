@@ -170,10 +170,12 @@ read_access_map(const string& map_file) {
 
     access_map.reset(new filter::AccessMap);
 
-    // BOZO should probably give a nicer err message here,
-    //  since it's reasonably likely to fail on user input
-    FLT_ASSERT(google::protobuf::TextFormat::
-               ParseFromString(map_file_text, access_map.get()));
+    if ( ! google::protobuf::TextFormat::
+         ParseFromString(map_file_text, access_map.get()) ) {
+        fprintf(stderr, "filter: ERROR: Cannot parse %s which should be "
+                "a text-format proto of type AccessMap.\n", map_file.c_str());
+        exit(EXIT_FAILURE);
+    }
 
     // Confirm that AccessMap is well-formed.
     check_access_map( *(access_map.get()) );
@@ -188,9 +190,12 @@ static const filter::KeyList* readKeyList(const string& keylist_file) {
     keylist_map[keylist_file].reset(new filter::KeyList);
     string keylist_text;
     read_whole_file(keylist_file, &keylist_text);
-    // BOZO better err msg
-    FLT_ASSERT(google::protobuf::TextFormat::
-               ParseFromString(keylist_text, keylist_map[keylist_file].get()));
+    if ( ! google::protobuf::TextFormat::
+         ParseFromString(keylist_text, keylist_map[keylist_file].get()) ) {
+        fprintf(stderr, "filter: ERROR: Cannot parse %s which should be "
+                "a text-format proto of type KeyList.\n", keylist_file.c_str());
+        exit(EXIT_FAILURE);
+    }
 
     // Convert keys given as hex strings to raw bytes.
     for (auto& key : *(keylist_map[keylist_file]->mutable_key()) ) {
