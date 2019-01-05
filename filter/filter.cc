@@ -35,12 +35,12 @@
 constexpr bool kDebug = true;  // BOZO
 
 enum Mode {
-    UNKNOWN,
-    CLEAN,
-    SMUDGE,
-    DIFF,
-    MERGE,
-    SELFTEST
+    kUnknown,
+    kClean,
+    kSmudge,
+    kDiff,
+    kMerge,
+    kSelftest
 };
 
 using std::string;
@@ -141,7 +141,7 @@ WriteWholeFile(const string& filename, const string& contents) {
 }
 
 static void
-check_access_map(const filter::AccessMap& map) {
+CheckAccessMap(const filter::AccessMap& map) {
     // Check that each path component given in AccessMap appears
     // to be legal.
     //
@@ -156,7 +156,7 @@ check_access_map(const filter::AccessMap& map) {
 
         const auto& entry = it.second;
         if (entry.entry_oneof_case() == filter::AccessMap_Entry::kNext) {
-            check_access_map(entry.next());
+            CheckAccessMap(entry.next());
         }
     }
 }
@@ -178,10 +178,10 @@ ReadAccessMap(const string& map_file) {
     }
 
     // Confirm that AccessMap is well-formed.
-    check_access_map( *(access_map.get()) );
+    CheckAccessMap( *(access_map.get()) );
 }
 
-static const filter::KeyList* readKeyList(const string& keylist_file) {
+static const filter::KeyList* ReadKeyList(const string& keylist_file) {
     const auto& it = keylist_map.find(keylist_file);
     if (it != keylist_map.end()) {
         return it->second.get();
@@ -236,7 +236,7 @@ static const filter::KeyList* readKeyList(const string& keylist_file) {
     return keylist_map[keylist_file].get();
 }
 
-static const filter::KeyList* findKeyList(const char* file_path,
+static const filter::KeyList* FindKeyList(const char* file_path,
                                           unsigned  file_path_sz,
                                           const filter::AccessMap& map) {
     // Find size of the first path component, before the first '/' character.
@@ -258,7 +258,7 @@ static const filter::KeyList* findKeyList(const char* file_path,
     const filter::AccessMap_Entry& entry = it->second;
     switch (entry.entry_oneof_case()) {
     case filter::AccessMap_Entry::kKeylistId: {
-        return readKeyList(entry.keylist_id());
+        return ReadKeyList(entry.keylist_id());
         break;
     }
     case filter::AccessMap_Entry::kNext: {
@@ -270,7 +270,7 @@ static const filter::KeyList* findKeyList(const char* file_path,
         }
         if (first_sz < file_path_sz) {
             // We have more path components, so recurse.
-            return findKeyList(file_path + first_sz,
+            return FindKeyList(file_path + first_sz,
                                file_path_sz - first_sz,
                                next);
         }
@@ -288,9 +288,9 @@ static const filter::KeyList* findKeyList(const char* file_path,
     }
 }
 
-static const filter::KeyList* findKeyList(const string& file_path) {
+static const filter::KeyList* FindKeyList(const string& file_path) {
     FLT_ASSERT(access_map);
-    return findKeyList(file_path.data(), file_path.size(), *access_map);
+    return FindKeyList(file_path.data(), file_path.size(), *access_map);
 }
 
 static uint8_t* toBytes(char* in) {
@@ -307,7 +307,7 @@ struct Blob {
 };
 
 static void
-findBlobs(const string& file_path,
+FindBlobs(const string& file_path,
           const string& plaintext,
           std::vector<Blob>* blobs) {
     FLT_ASSERT(blobs->empty());
@@ -402,9 +402,9 @@ findBlobs(const string& file_path,
 // Appends to |result| and does not require |result| to be
 // initially empty.
 static void
-decrypt_blob(const string& key,  // 16 bytes
-             const filter::Blob& blob,
-             string* result) {
+DecryptBlob(const string& key,  // 16 bytes
+            const filter::Blob& blob,
+            string* result) {
     FLT_ASSERT(16 == key.size());
     FLT_ASSERT(16 == blob.iv().size());
     FLT_ASSERT(16 == CryptoPP::AES::DEFAULT_KEYLENGTH);
@@ -421,10 +421,10 @@ decrypt_blob(const string& key,  // 16 bytes
 }
 
 static void
-encrypt_blob(const string& key,  // 16 bytes
-             const string& iv,   // 16 bytes
-             const uint8_t* plaintext, size_t plaintext_sz,
-             string* ciphered_blob) {
+EncryptBlob(const string& key,  // 16 bytes
+            const string& iv,   // 16 bytes
+            const uint8_t* plaintext, size_t plaintext_sz,
+            string* ciphered_blob) {
     FLT_ASSERT(16 == key.size());
     FLT_ASSERT(16 == iv.size());
     FLT_ASSERT(ciphered_blob->empty());
@@ -445,8 +445,8 @@ encrypt_blob(const string& key,  // 16 bytes
 }
 
 static void
-hash_string_to_iv(const string& in,
-                  string* iv /* 16 bytes */) {
+HashStringToIV(const string& in,
+               string* iv /* 16 bytes */) {
     char buf[16];
     CryptoPP::SHA3(16).CalculateDigest
         (toBytes(buf), toBytesConst(in.data()), in.size());
@@ -470,8 +470,22 @@ HasMagicPrefix(const string& contents) {
 
 class StringOut {
     // Represents a string, whose storage may be live here within
-    // this object, or it may be stored outside! Useful for avoiding
-    // string copies...
+    // this object, or it may point to outside storage.
+    //
+    // Useful to avoid making copies, in functions that might return
+    // a newly-constructed string or might also return some existing
+    // string. For example:
+    //
+    //   StringOut DoCleverStuff(const string& in) {
+    //     if (...) {
+    //       // pass through case
+    //       return StringOut(&in);
+    //     }
+    //     // Create a brand new string as output
+    //     StringOut result;
+    //     FillNewString(result.mutable_string());
+    //     return result;
+    //   }
 public:
     StringOut() : external_(nullptr) {}
     explicit StringOut(const string* external)
@@ -529,7 +543,7 @@ FilterClean(const string& file_path,
     // Q) Will this confuse git, if the plaintext file is binary but the
     //    "cleaned" file is not?
 
-    const filter::KeyList* key_list = findKeyList(file_path);
+    const filter::KeyList* key_list = FindKeyList(file_path);
     if (nullptr == key_list) {
         return StringOut(&contents);
     }
@@ -541,7 +555,7 @@ FilterClean(const string& file_path,
 
     // Compute the IV for this file.
     string file_iv;
-    hash_string_to_iv(file_path, &file_iv);
+    HashStringToIV(file_path, &file_iv);
 
     filter::CipheredFile ciphered;
     unsigned key_index = key_list->key_size() - 1;
@@ -553,7 +567,7 @@ FilterClean(const string& file_path,
     FLT_ASSERT(key.size() == 16);
 
     std::vector<Blob> blobs;
-    findBlobs(file_path, contents, &blobs);
+    FindBlobs(file_path, contents, &blobs);
 
     unordered_map<uint64_t /* blob hash */,
                   unsigned /* count of blobs with this hash so far */>
@@ -593,12 +607,12 @@ FilterClean(const string& file_path,
         iv_raw.SerializeToString(&blob_iv_string);
 
         string blob_iv;  // 16 byte digest
-        hash_string_to_iv(blob_iv_string, &blob_iv);
+        HashStringToIV(blob_iv_string, &blob_iv);
 
         string ciphered_blob;
-        encrypt_blob(key, blob_iv,
-                     toBytesConst(contents.data() + offset), len,
-                     &ciphered_blob);
+        EncryptBlob(key, blob_iv,
+                    toBytesConst(contents.data() + offset), len,
+                    &ciphered_blob);
         filter::Blob* bl = ciphered.add_blob();
         bl->set_data(ciphered_blob);
         bl->set_iv(blob_iv);
@@ -638,7 +652,7 @@ FilterSmudge(const string& clean_contents,
         FLT_ASSERT(file_path == ciphered.file_path());
     }
 
-    const filter::KeyList* key_list = findKeyList(ciphered.file_path());
+    const filter::KeyList* key_list = FindKeyList(ciphered.file_path());
     if (nullptr == key_list) {
         return StringOut(&clean_contents);
     }
@@ -649,7 +663,7 @@ FilterSmudge(const string& clean_contents,
 
     StringOut out;
     for (const auto& blob : ciphered.blob()) {
-        decrypt_blob(key, blob, out.mutable_string());
+        DecryptBlob(key, blob, out.mutable_string());
     }
     return out;
 }
@@ -765,8 +779,8 @@ TestRoundTrip(const char* plaintext_filename) {
 // for use in the merge test. Where |in_file| is the
 // plaintext source file for the test, and the tmp file
 // is optionally ciphered based on |fake_path|.
-static string test_merge_input(const string& in_file,
-                               const string& fake_path) {
+static string TestMergeInput(const string& in_file,
+                             const string& fake_path) {
     string in_text;
     ReadWholeFile(in_file, &in_text);
 
@@ -790,9 +804,9 @@ static void TestMerge(const string& anc_file,
     string fake_path(apply_crypto
                      ? "secret/file"
                      : "somewhere/else/file");
-    string tmp_anc_file = test_merge_input(anc_file, fake_path);
-    string tmp_ours_file = test_merge_input(ours_file, fake_path);
-    string tmp_theirs_file = test_merge_input(theirs_file, fake_path);
+    string tmp_anc_file = TestMergeInput(anc_file, fake_path);
+    string tmp_ours_file = TestMergeInput(ours_file, fake_path);
+    string tmp_theirs_file = TestMergeInput(theirs_file, fake_path);
 
     // Call the merge function
     bool ok = FilterMerge(tmp_anc_file,
@@ -830,7 +844,7 @@ static void TestMerge(const string& anc_file,
 // Produce a hex dump for a ciphered file.
 // Assumes that 'in_file' is below the out/ directory already.
 static string
-hex_dump(const string& in_file) {
+HexDump(const string& in_file) {
     string in_text;
     ReadWholeFile(in_file, &in_text);
     FLT_ASSERT(HasMagicPrefix(in_text));
@@ -845,7 +859,7 @@ hex_dump(const string& in_file) {
 }
 
 static unsigned
-file_size(const string& file) {
+FileSize(const string& file) {
     struct stat stbuf;
     int status = lstat(file.c_str(), &stbuf);
     FLT_ASSERT(status == 0);
@@ -855,16 +869,16 @@ file_size(const string& file) {
 static void
 TestCompactDiffs(const string& fileA,
                  const string& fileB) {
-    string a_dump = hex_dump(fileA);
-    string b_dump = hex_dump(fileB);
+    string a_dump = HexDump(fileA);
+    string b_dump = HexDump(fileB);
 
     string diff_out_file = a_dump + ".diff_out";
     string cmd = string("diff ") + a_dump + " " + b_dump + " > " + diff_out_file;
     int status = system(cmd.c_str());
     FLT_ASSERT(status != 0); // we expect diff to fail...
 
-    unsigned a_sz = file_size(a_dump);
-    unsigned diff_sz = file_size(diff_out_file);
+    unsigned a_sz = FileSize(a_dump);
+    unsigned diff_sz = FileSize(diff_out_file);
 
     // Binary diffs should be compact.
     //
@@ -1042,7 +1056,7 @@ static bool StringArg(int* ip,
 }
 
 int main(int argc, char** argv) {
-    Mode mode = UNKNOWN;
+    Mode mode = kUnknown;
     string file_path;
     string input_file;
     string access_map_file;
@@ -1071,19 +1085,19 @@ int main(int argc, char** argv) {
                 exit(EXIT_FAILURE);
             }
             if (0 == strcmp("clean", argv[i])) {
-                mode = CLEAN;
+                mode = kClean;
             } else if (0 == strcmp("smudge", argv[i])) {
-                mode = SMUDGE;
+                mode = kSmudge;
             } else if (0 == strcmp("diff", argv[i])) {
-                mode = DIFF;
+                mode = kDiff;
             } else if (0 == strcmp("merge", argv[i])) {
-                mode = MERGE;
+                mode = kMerge;
             } else if (0 == strcmp("selftest", argv[i])) {
                 // NOTE: self test mode assumes filter.cc is running
                 //       in its own dev tree's "test/" directory...
-                mode = SELFTEST;
+                mode = kSelftest;
             } else if (0 == strcmp("selftest_regold", argv[i])) {
-                mode = SELFTEST;
+                mode = kSelftest;
                 selftest_regold = true;
             } else {
                 Usage();
@@ -1106,7 +1120,7 @@ int main(int argc, char** argv) {
     }
 
     // Check for required options
-    if ((mode != DIFF) && (mode != SELFTEST) && file_path.empty()) {
+    if ((mode != kDiff) && (mode != kSelftest) && file_path.empty()) {
         Usage();
         exit(EXIT_FAILURE);
     }
@@ -1119,7 +1133,7 @@ int main(int argc, char** argv) {
     ReadAccessMap(access_map_file);
 
     switch (mode) {
-    case CLEAN: {
+    case kClean: {
         // Clean will encrypt certain secret files.
         // Our behavior here depends on whether the file is text or binary
         // (TBD -- really? not yet it doesn't...)
@@ -1136,7 +1150,7 @@ int main(int argc, char** argv) {
         }
         break;
     }
-    case SMUDGE: {
+    case kSmudge: {
         // Smudge will decrypt files that were stored encrypted.
         //
         string in;
@@ -1147,7 +1161,7 @@ int main(int argc, char** argv) {
         }
         break;
     }
-    case DIFF: {
+    case kDiff: {
         string in;
         ReadWholeFile(input_file.c_str(), &in);
         StringOut out = FilterDiff(in);
@@ -1156,7 +1170,7 @@ int main(int argc, char** argv) {
         }
         break;
     }
-    case MERGE: {
+    case kMerge: {
         bool ok = FilterMerge(merge_ancestor_file,
                               merge_ours_file,
                               merge_theirs_file,
@@ -1164,7 +1178,7 @@ int main(int argc, char** argv) {
         exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
         break;
     }
-    case SELFTEST: {
+    case kSelftest: {
         SelfTest(selftest_regold);
         break;
     }
