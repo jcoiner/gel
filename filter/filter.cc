@@ -1134,9 +1134,11 @@ int main(int argc, char** argv) {
 
     switch (mode) {
     case kClean: {
-        // Allow making clean fail for testing...
+        // Allow making clean fail for testing. This lets you
+        // easily confirm that the 'filter.<driver>.required'
+        // setting in .git/config works as advertised:
         FLT_ASSERT(nullptr == getenv("GEL_FORCE_CLEAN_FAIL"));
-        
+
         // Clean will encrypt certain secret files.
         // Our behavior here depends on whether the file is text or binary
         // (TBD -- really? not yet it doesn't...)
