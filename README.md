@@ -116,3 +116,5 @@ An attacker should be unable to recognize sections that repeat in the same file,
 The git hooks allow us to cipher file contents only. Everything else is cleartext in the repo, including filenames, branch names, the identity of committers, and comment history. All this is visible to any observer with repo access; they don't need any decryption key to see it.
 
 The encrypted format is not tamper-proof. Without the key, an attacker could remove, rearrange, or duplicate sections of the ciphered file, and produce a new valid ciphered file that will still decrypt without error. I don't think tampering is likely to be a concern, since git itself will record the identities of anyone modifying file contents.
+
+Unfortunately, git tends to fail open: if the clean filter fails for any reason, git will fall back to taking the plaintext view into the repo. Whoops. Ideally it would be possible to configure git to take clean errors more seriously.
