@@ -32,7 +32,7 @@
 #define MAGIC_NAME_LEN 6
 #define MAGIC_NAME "gelFLT"
 
-constexpr bool debug = true;  // BOZO
+constexpr bool kDebug = true;  // BOZO
 
 enum Mode {
     UNKNOWN,
@@ -48,7 +48,7 @@ using std::unique_ptr;
 using std::unordered_map;
 using std::vector;
 
-void usage() {
+void Usage() {
     fprintf(stderr, "This is the Git Encryption Layer `filter' program.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Usage:\n");
@@ -85,15 +85,15 @@ static unordered_map<string /* keylist file */,
                      unique_ptr<filter::KeyList> > keylist_map;
 
 static void
-read_whole_file(FILE* in, string* contents) {
+ReadWholeFile(FILE* in, string* contents) {
     FLT_ASSERT(contents->empty());
 
-    constexpr unsigned buf_sz = 1024;
-    char buf[buf_sz];
-    unsigned read_count = fread(buf, 1, buf_sz, in);
-    while (read_count == buf_sz) {
+    constexpr unsigned kBufSz = 1024;
+    char buf[kBufSz];
+    unsigned read_count = fread(buf, 1, kBufSz, in);
+    while (read_count == kBufSz) {
         contents->append(buf, read_count);
-        read_count = fread(buf, 1, buf_sz, in);
+        read_count = fread(buf, 1, kBufSz, in);
     }
     if (read_count > 0) {
         contents->append(buf, read_count);
@@ -103,41 +103,41 @@ read_whole_file(FILE* in, string* contents) {
 }
 
 static void
-read_whole_file(const char* filename, string* contents) {
+ReadWholeFile(const char* filename, string* contents) {
     FILE* in = fopen(filename, "r");
     if (!in) {
         fprintf(stderr, "filter: ERROR: Cannot read %s\n", filename);
         exit(EXIT_FAILURE);
     }
-    read_whole_file(in, contents);
+    ReadWholeFile(in, contents);
     fclose(in);
 }
 
 static void
-read_whole_file(const string& filename, string* contents) {
-    read_whole_file(filename.c_str(), contents);
+ReadWholeFile(const string& filename, string* contents) {
+    ReadWholeFile(filename.c_str(), contents);
 }
 
 static void
-write_whole_file(FILE* out, const string& contents) {
+WriteWholeFile(FILE* out, const string& contents) {
     FLT_ASSERT(contents.size() ==
                fwrite(contents.data(), 1, contents.size(), out));
 }
 
 static void
-write_whole_file(const char* filename, const string& contents) {
+WriteWholeFile(const char* filename, const string& contents) {
     FILE* out = fopen(filename, "w");
     if (!out) {
         fprintf(stderr, "ERROR: Cannot write '%s'\n", filename);
         exit(EXIT_FAILURE);
     }
-    write_whole_file(out, contents);
+    WriteWholeFile(out, contents);
     fclose(out);
 }
 
 static void
-write_whole_file(const string& filename, const string& contents) {
-    write_whole_file(filename.c_str(), contents);
+WriteWholeFile(const string& filename, const string& contents) {
+    WriteWholeFile(filename.c_str(), contents);
 }
 
 static void
@@ -162,11 +162,11 @@ check_access_map(const filter::AccessMap& map) {
 }
 
 static void
-read_access_map(const string& map_file) {
+ReadAccessMap(const string& map_file) {
     FLT_ASSERT(!access_map);
     
     string map_file_text;
-    read_whole_file(map_file, &map_file_text);
+    ReadWholeFile(map_file, &map_file_text);
 
     access_map.reset(new filter::AccessMap);
 
@@ -189,7 +189,7 @@ static const filter::KeyList* readKeyList(const string& keylist_file) {
 
     keylist_map[keylist_file].reset(new filter::KeyList);
     string keylist_text;
-    read_whole_file(keylist_file, &keylist_text);
+    ReadWholeFile(keylist_file, &keylist_text);
     if ( ! google::protobuf::TextFormat::
          ParseFromString(keylist_text, keylist_map[keylist_file].get()) ) {
         fprintf(stderr, "filter: ERROR: Cannot parse %s which should be "
@@ -320,11 +320,11 @@ findBlobs(const string& file_path,
     cur_blob.start_offset = 0;
     // hash to be determined...
 
-    constexpr unsigned min_blob_sz = 64;
+    constexpr unsigned kMinBlobSz = 64;
 
-    constexpr unsigned hash_span_tiers = 3;
-    constexpr unsigned hash_span[hash_span_tiers] = { 4, 16, 64 };
-    constexpr unsigned bits_per_tier[hash_span_tiers] = { 3, 2, 2 };
+    constexpr unsigned kHashSpanTiers = 3;
+    constexpr unsigned kHashSpan[kHashSpanTiers] = { 4, 16, 64 };
+    constexpr unsigned kBitsPerTier[kHashSpanTiers] = { 3, 2, 2 };
 
     // Seed the hash generator with the file path.
     //
@@ -339,12 +339,12 @@ findBlobs(const string& file_path,
     }
 
     // If this invariant weren't true, we could buffer underflow below
-    FLT_ASSERT( hash_span[hash_span_tiers - 1] <= min_blob_sz );
+    FLT_ASSERT( kHashSpan[kHashSpanTiers - 1] <= kMinBlobSz );
 
     for ( unsigned cur_idx = 0;
           cur_idx < plaintext.size();
           cur_idx++ ) {
-        if ( (cur_idx - cur_blob.start_offset) <= min_blob_sz ) {
+        if ( (cur_idx - cur_blob.start_offset) <= kMinBlobSz ) {
             continue;
         }
 
@@ -362,13 +362,13 @@ findBlobs(const string& file_path,
         // 1 in 2^(bits_per_tier*hash_span_tiers)
         uint64_t hash = init_hash;
         unsigned chars_hashed = 0;
-        for (unsigned tier = 0; tier < hash_span_tiers; tier++) {
-            while (chars_hashed < hash_span[tier]) {
+        for (unsigned tier = 0; tier < kHashSpanTiers; tier++) {
+            while (chars_hashed < kHashSpan[tier]) {
                 chars_hashed++;
                 // The old K&R classic:
                 hash = (hash * 31u) + plaintext.at(cur_idx - chars_hashed);
             }
-            if ( 0 != ( hash & ( ( 1U << bits_per_tier[tier] ) - 1 ) ) ) {
+            if ( 0 != ( hash & ( ( 1U << kBitsPerTier[tier] ) - 1 ) ) ) {
                 // Don't advance to the next tier.
                 goto continue_outer_loop;
             }
@@ -454,7 +454,7 @@ hash_string_to_iv(const string& in,
 }
 
 static bool
-has_magic_prefix(const string& contents) {
+HasMagicPrefix(const string& contents) {
     filter::CipheredFile header_only;
     header_only.set_magic_header(MAGIC_NAME, MAGIC_NAME_LEN);
     string header_bytes;
@@ -474,7 +474,7 @@ class StringOut {
     // string copies...
 public:
     StringOut() : external_(nullptr) {}
-    StringOut(const string* external)
+    explicit StringOut(const string* external)
         : external_(external) {}
 
     // We never want to do a deep copy of this type;
@@ -499,7 +499,7 @@ private:
     string internal_;
 };
 
-// filter_clean: top level routine implementing the encrypting "clean" filter.
+// FilterClean: top level routine implementing the encrypting "clean" filter.
 //
 // This routine is idempotent, since git requires its clean and smudge filters
 // to be idempotent.
@@ -522,8 +522,8 @@ private:
 // same file, so many of the ciphered blocks will be common across revs.
 //
 static StringOut
-filter_clean(const string& file_path,
-             const string& contents) {
+FilterClean(const string& file_path,
+            const string& contents) {
     // Can we operate the same way on either text or binary files?
     // For now assume we can.
     // Q) Will this confuse git, if the plaintext file is binary but the
@@ -535,7 +535,7 @@ filter_clean(const string& file_path,
     }
 
     // If the file has already been ciphered, pass through.
-    if (has_magic_prefix(contents)) {
+    if (HasMagicPrefix(contents)) {
         return StringOut(&contents);
     }
 
@@ -622,9 +622,9 @@ filter_clean(const string& file_path,
 }
 
 static StringOut
-filter_smudge(const string& clean_contents,
-              const string& file_path /* present for smudge; empty for diff */) {
-    if (!has_magic_prefix(clean_contents)) {
+FilterSmudge(const string& clean_contents,
+             const string& file_path /* present for smudge; empty for diff */) {
+    if (!HasMagicPrefix(clean_contents)) {
         // If file wasn't ciphered, pass it through.
         return StringOut(&clean_contents);
     }
@@ -655,13 +655,13 @@ filter_smudge(const string& clean_contents,
 }
 
 static StringOut
-filter_diff(const string& clean_contents) {
-    return filter_smudge(clean_contents, "");
+FilterDiff(const string& clean_contents) {
+    return FilterSmudge(clean_contents, "");
 }
 
 static void
-setup_merge_input(const string& contents,
-                  git_merge_file_input* merge_input) {
+SetupMergeInput(const string& contents,
+                git_merge_file_input* merge_input) {
     git_merge_file_init_input(merge_input, GIT_MERGE_FILE_INPUT_VERSION);
     merge_input->ptr  = contents.data();
     merge_input->size = contents.size();
@@ -670,18 +670,18 @@ setup_merge_input(const string& contents,
 }
 
 static bool
-filter_merge(const string& merge_ancestor_file,
-             const string& merge_ours_file,
-             const string& merge_theirs_file,
-             const string& file_path) {
+FilterMerge(const string& merge_ancestor_file,
+            const string& merge_ours_file,
+            const string& merge_theirs_file,
+            const string& file_path) {
     string anc, ours, theirs;
-    read_whole_file(merge_ancestor_file.c_str(), &anc);
-    read_whole_file(merge_ours_file.c_str(),     &ours);
-    read_whole_file(merge_theirs_file.c_str(),   &theirs);
+    ReadWholeFile(merge_ancestor_file.c_str(), &anc);
+    ReadWholeFile(merge_ours_file.c_str(),     &ours);
+    ReadWholeFile(merge_theirs_file.c_str(),   &theirs);
 
-    StringOut plain_anc    = filter_smudge(anc,    file_path);
-    StringOut plain_ours   = filter_smudge(ours,   file_path);
-    StringOut plain_theirs = filter_smudge(theirs, file_path);
+    StringOut plain_anc    = FilterSmudge(anc,    file_path);
+    StringOut plain_ours   = FilterSmudge(ours,   file_path);
+    StringOut plain_theirs = FilterSmudge(theirs, file_path);
 
     git_merge_file_options fopts;
     git_merge_file_init_options(&fopts, GIT_MERGE_FILE_OPTIONS_VERSION);
@@ -696,9 +696,9 @@ filter_merge(const string& merge_ancestor_file,
     git_merge_file_input anci;
     git_merge_file_input oursi;
     git_merge_file_input theirsi;
-    setup_merge_input(plain_anc.get(),    &anci);
-    setup_merge_input(plain_ours.get(),   &oursi);
-    setup_merge_input(plain_theirs.get(), &theirsi);
+    SetupMergeInput(plain_anc.get(),    &anci);
+    SetupMergeInput(plain_ours.get(),   &oursi);
+    SetupMergeInput(plain_theirs.get(), &theirsi);
 
     git_merge_file_result result;
     int status = git_merge_file(&result, &anci, &oursi, &theirsi, &fopts);
@@ -719,8 +719,8 @@ filter_merge(const string& merge_ancestor_file,
     // since merge should be less common than smudge/clean...
     string merged_plain(result.ptr, result.len);
 
-    StringOut merged = filter_clean(file_path, merged_plain);
-    write_whole_file(merge_ours_file.c_str(), merged.get());
+    StringOut merged = FilterClean(file_path, merged_plain);
+    WriteWholeFile(merge_ours_file.c_str(), merged.get());
 
     bool return_status = result.automergeable;
     git_merge_file_result_free(&result);
@@ -728,34 +728,34 @@ filter_merge(const string& merge_ancestor_file,
 }
 
 static void
-test_round_trip(const char* plaintext_filename) {
+TestRoundTrip(const char* plaintext_filename) {
     string plaintext;
-    read_whole_file(plaintext_filename, &plaintext);
+    ReadWholeFile(plaintext_filename, &plaintext);
 
     string path("secret/file");
-    StringOut ciphered_text = filter_clean(path, plaintext);
+    StringOut ciphered_text = FilterClean(path, plaintext);
 
     string cipher_filename;
     cipher_filename.append("out/");
     cipher_filename.append(plaintext_filename);
     cipher_filename.append(".clean");
-    write_whole_file(cipher_filename.c_str(), ciphered_text.get());
+    WriteWholeFile(cipher_filename.c_str(), ciphered_text.get());
 
     // Test idempotency of clean operation
-    StringOut doubly_ciphered_text = filter_clean(path, ciphered_text.get());
+    StringOut doubly_ciphered_text = FilterClean(path, ciphered_text.get());
     FLT_ASSERT(doubly_ciphered_text.get() == ciphered_text.get());
 
     // Smudge (decrypt) the cleaned (ciphered) contents
-    StringOut plaintext_smudge_out = filter_smudge(ciphered_text.get(), path);
+    StringOut plaintext_smudge_out = FilterSmudge(ciphered_text.get(), path);
     FLT_ASSERT(plaintext_smudge_out.get() == plaintext);
 
     // Test the diff (decrypt) routine which is slightly
     // different than the smudge routine
-    StringOut plaintext_diff_out = filter_diff(ciphered_text.get());
+    StringOut plaintext_diff_out = FilterDiff(ciphered_text.get());
     FLT_ASSERT(plaintext_diff_out.get() == plaintext);
 
     // Test idempotency of smudge operation
-    StringOut doubly_smudged_text = filter_smudge(plaintext, path);
+    StringOut doubly_smudged_text = FilterSmudge(plaintext, path);
     FLT_ASSERT(doubly_smudged_text.get() == plaintext);
 
     printf("round_trip OK: %s\n", plaintext_filename);
@@ -768,25 +768,25 @@ test_round_trip(const char* plaintext_filename) {
 static string test_merge_input(const string& in_file,
                                const string& fake_path) {
     string in_text;
-    read_whole_file(in_file, &in_text);
+    ReadWholeFile(in_file, &in_text);
 
     string tmp_file;
     tmp_file.append("out/");
     tmp_file.append(in_file);
 
-    StringOut repo_contents = filter_clean(fake_path, in_text);
+    StringOut repo_contents = FilterClean(fake_path, in_text);
 
-    write_whole_file(tmp_file, repo_contents.get());
+    WriteWholeFile(tmp_file, repo_contents.get());
     return tmp_file;
 }
 
-static void test_merge(const string& anc_file,
-                       const string& ours_file,
-                       const string& theirs_file,
-                       const string& expected_result_file,
-                       bool expect_auto_merge_ok,
-                       bool apply_crypto,
-                       bool regold) {
+static void TestMerge(const string& anc_file,
+                      const string& ours_file,
+                      const string& theirs_file,
+                      const string& expected_result_file,
+                      bool expect_auto_merge_ok,
+                      bool apply_crypto,
+                      bool regold) {
     string fake_path(apply_crypto
                      ? "secret/file"
                      : "somewhere/else/file");
@@ -795,30 +795,30 @@ static void test_merge(const string& anc_file,
     string tmp_theirs_file = test_merge_input(theirs_file, fake_path);
 
     // Call the merge function
-    bool ok = filter_merge(tmp_anc_file,
-                           tmp_ours_file,
-                           tmp_theirs_file,
-                           fake_path);
+    bool ok = FilterMerge(tmp_anc_file,
+                          tmp_ours_file,
+                          tmp_theirs_file,
+                          fake_path);
     FLT_ASSERT(ok == expect_auto_merge_ok);
 
     string merge_result;
     string merge_result_expect;
-    read_whole_file(tmp_ours_file, &merge_result);
+    ReadWholeFile(tmp_ours_file, &merge_result);
 
     if (apply_crypto) {
         // The merge result should be ciphered in this case.
-        FLT_ASSERT(has_magic_prefix(merge_result));
+        FLT_ASSERT(HasMagicPrefix(merge_result));
     } else {
-        FLT_ASSERT(!has_magic_prefix(merge_result));
+        FLT_ASSERT(!HasMagicPrefix(merge_result));
     }
 
     // Possibly decipher the merge result
-    StringOut merge_result_plaintext = filter_smudge(merge_result, fake_path);
+    StringOut merge_result_plaintext = FilterSmudge(merge_result, fake_path);
 
     if (regold) {
-        write_whole_file(expected_result_file, merge_result_plaintext.get());
+        WriteWholeFile(expected_result_file, merge_result_plaintext.get());
     } else {
-        read_whole_file(expected_result_file, &merge_result_expect);
+        ReadWholeFile(expected_result_file, &merge_result_expect);
         FLT_ASSERT(merge_result_plaintext.get() == merge_result_expect);
     }
 
@@ -832,8 +832,8 @@ static void test_merge(const string& anc_file,
 static string
 hex_dump(const string& in_file) {
     string in_text;
-    read_whole_file(in_file, &in_text);
-    FLT_ASSERT(has_magic_prefix(in_text));
+    ReadWholeFile(in_file, &in_text);
+    FLT_ASSERT(HasMagicPrefix(in_text));
 
     string dump_file = in_file + ".dump";
     FILE* dump = fopen(dump_file.c_str(), "w");
@@ -853,8 +853,8 @@ file_size(const string& file) {
 }
 
 static void
-test_compact_diffs(const string& fileA,
-                   const string& fileB) {
+TestCompactDiffs(const string& fileA,
+                 const string& fileB) {
     string a_dump = hex_dump(fileA);
     string b_dump = hex_dump(fileB);
 
@@ -877,20 +877,20 @@ test_compact_diffs(const string& fileA,
 }
 
 static void
-test_stable_smudge(const string& old_ciphered_file,
-                   const string& expect_plaintext_file) {
+TestStableSmudge(const string& old_ciphered_file,
+                 const string& expect_plaintext_file) {
     string ciphered_text;
-    read_whole_file(old_ciphered_file, &ciphered_text);
+    ReadWholeFile(old_ciphered_file, &ciphered_text);
 
-    StringOut plaintext_out = filter_smudge(ciphered_text, "secret/file");
+    StringOut plaintext_out = FilterSmudge(ciphered_text, "secret/file");
 
     string expect_plaintext;
-    read_whole_file(expect_plaintext_file, &expect_plaintext);
+    ReadWholeFile(expect_plaintext_file, &expect_plaintext);
     FLT_ASSERT(expect_plaintext == plaintext_out.get());
 }
 
 static void
-test_semantic_security() {
+TestSemanticSecurity() {
     // In a single file with repeating text, ensure we produce unique
     // IVs for each blob.
 
@@ -902,7 +902,7 @@ test_semantic_security() {
         // This text has at least one blob trigger:
         plaintext.append("Though the spirit of the proverb had been expressed previously, the modern saying appeared first in James Howell's Proverbs in English, Italian, French and Spanish (1659),[1] and was included in later collections of proverbs. It also appears in Howell's Paroimiographia (1659), p. 12. ");
     }
-    StringOut ciphertext = filter_clean("secret/file", plaintext);
+    StringOut ciphertext = FilterClean("secret/file", plaintext);
 
     // Ensure that no two blobs have the same IV.
     filter::CipheredFile ciphered;
@@ -919,21 +919,21 @@ test_semantic_security() {
     FLT_ASSERT(ct > 127);
 }
 
-static void selftest(bool regold) {
+static void SelfTest(bool regold) {
     // For each file, cipher it and decipher it.
     //
-    test_round_trip("decl1.txt");
-    test_round_trip("decl2.txt");
-    test_round_trip("decl3.txt");
+    TestRoundTrip("decl1.txt");
+    TestRoundTrip("decl2.txt");
+    TestRoundTrip("decl3.txt");
 
     // We expect that since plaintext is similar across
     // decl1/2/3, the ciphertext should not differ hugely either.
     // This is what will allow git to deltify edits and store
     // them efficiently. Check on this:
-    test_compact_diffs("out/decl1.txt.clean",
-                       "out/decl2.txt.clean");
-    test_compact_diffs("out/decl2.txt.clean",
-                       "out/decl3.txt.clean");
+    TestCompactDiffs("out/decl1.txt.clean",
+                     "out/decl2.txt.clean");
+    TestCompactDiffs("out/decl2.txt.clean",
+                     "out/decl3.txt.clean");
 
     // I's very important that we have a stable smudge operation for
     // old pre-existing cleaned files that are stored in git.
@@ -951,37 +951,37 @@ static void selftest(bool regold) {
     //
     // TODO: key rotation isn't tested yet, we're not covering the case
     // where the ciphered file was ciphered using a retired key.
-    test_stable_smudge("decl1.txt.old.clean",
-                       "decl1.txt");
+    TestStableSmudge("decl1.txt.old.clean",
+                     "decl1.txt");
 
-    test_merge("merge_anc.txt",
-               "merge_ours.txt",
-               "merge_theirs.txt",
+    TestMerge("merge_anc.txt",
+              "merge_ours.txt",
+              "merge_theirs.txt",
+              "merge_result.txt",
+              true  /* expect auto merge ok */,
+              false /* apply encrypt/decrpyt */,
+              regold);
+    TestMerge("merge_anc.txt",
+              "merge_ours.txt",
+              "merge_theirs.txt",
                "merge_result.txt",
-               true  /* expect auto merge ok */,
-               false /* apply encrypt/decrpyt */,
-               regold);
-    test_merge("merge_anc.txt",
-               "merge_ours.txt",
-               "merge_theirs.txt",
-               "merge_result.txt",
-               true  /* expect auto merge ok */,
-               true  /* apply encrypt/decrpyt */,
-               regold);
-    test_merge("merge_anc.txt",
-               "merge_ours.txt",
-               "merge_theirs2.txt",
-               "merge_result2a.txt",
-               false  /* expect auto merge ok */,
-               false  /* apply encrypt/decrypt */,
-               regold);
-    test_merge("merge_anc.txt",
-               "merge_ours.txt",
-               "merge_theirs2.txt",
-               "merge_result2b.txt",
-               false  /* expect auto merge ok */,
-               true   /* apply encrypt/decrypt */,
-               regold);
+              true  /* expect auto merge ok */,
+              true  /* apply encrypt/decrpyt */,
+              regold);
+    TestMerge("merge_anc.txt",
+              "merge_ours.txt",
+              "merge_theirs2.txt",
+              "merge_result2a.txt",
+              false  /* expect auto merge ok */,
+              false  /* apply encrypt/decrypt */,
+              regold);
+    TestMerge("merge_anc.txt",
+              "merge_ours.txt",
+              "merge_theirs2.txt",
+              "merge_result2b.txt",
+              false  /* expect auto merge ok */,
+              true   /* apply encrypt/decrypt */,
+              regold);
 
     // Merge some binary files.
     //
@@ -1005,34 +1005,34 @@ static void selftest(bool regold) {
     // I don't think raw git would leave a zero byte file, so this isn't
     // perfectly transparent, but it's not awful either. For now let's
     // just hang this change-detector test on it and call it good enough.
-    test_merge("merge_anc.bin",
-               "merge_ours.bin",
-               "merge_theirs.bin",
-               "merge_result.bin",
-               false  /* expect auto merge ok */,
-               true   /* apply encrypt/decrypt */,
-               regold);
-    test_merge("merge_anc.bin",
-               "merge_ours.bin",
-               "merge_theirs.bin",
-               "merge_result.bin",
-               false,  // expect auto merge ok
-               false,  // apply encrypt/decrypt
-               regold);
+    TestMerge("merge_anc.bin",
+              "merge_ours.bin",
+              "merge_theirs.bin",
+              "merge_result.bin",
+              false  /* expect auto merge ok */,
+              true   /* apply encrypt/decrypt */,
+              regold);
+    TestMerge("merge_anc.bin",
+              "merge_ours.bin",
+              "merge_theirs.bin",
+              "merge_result.bin",
+              false,  // expect auto merge ok
+              false,  // apply encrypt/decrypt
+              regold);
 
     // Confirm that an input file with repeating sections does
     // not produce repeating sections in the ciphered file.
-    test_semantic_security();
+    TestSemanticSecurity();
 }
 
-static bool string_arg(int* ip,
-                int argc, char** argv,
-                const char* arg_name,
-                string* value) {
+static bool StringArg(int* ip,
+                      int argc, char** argv,
+                      const char* arg_name,
+                      string* value) {
     if (0 == strcmp(arg_name, argv[*ip])) {
         (*ip)++;
         if ((*ip) >= argc) {
-            usage();
+            Usage();
             exit(EXIT_FAILURE);
         }
         value->assign(argv[*ip]);
@@ -1049,7 +1049,7 @@ int main(int argc, char** argv) {
     string merge_ancestor_file, merge_ours_file, merge_theirs_file;
     bool selftest_regold = false;
 
-    if (debug) {
+    if (kDebug) {
         fprintf(stderr, " > filter ");
         for (int i = 1; i < argc; i++) {
             fprintf(stderr, " %s", argv[i]);
@@ -1061,13 +1061,13 @@ int main(int argc, char** argv) {
         if ( (0 == strcmp("-h", argv[i])) ||
              (0 == strcmp("-help", argv[i])) ||
              (0 == strcmp("--help", argv[i])) ) {
-            usage();
+            Usage();
             exit(EXIT_SUCCESS);
         }
         if (0 == strcmp("-mode", argv[i])) {
             i++;
             if (i >= argc) {
-                usage();
+                Usage();
                 exit(EXIT_FAILURE);
             }
             if (0 == strcmp("clean", argv[i])) {
@@ -1086,37 +1086,37 @@ int main(int argc, char** argv) {
                 mode = SELFTEST;
                 selftest_regold = true;
             } else {
-                usage();
+                Usage();
                 exit(EXIT_FAILURE);
             }
         }
-        else if (string_arg(&i, argc, argv, "-access_map", &access_map_file)) { }
-        else if (string_arg(&i, argc, argv, "-file", &file_path))             { }
+        else if (StringArg(&i, argc, argv, "-access_map", &access_map_file)) { }
+        else if (StringArg(&i, argc, argv, "-file", &file_path))             { }
         // Textconv (diff) specifies input in a file, not stdin
         // because git is not great at consistency
-        else if (string_arg(&i, argc, argv, "-in", &input_file))              { }
+        else if (StringArg(&i, argc, argv, "-in", &input_file))              { }
         // Merge has extra args...
-        else if (string_arg(&i, argc, argv, "-ancestor", &merge_ancestor_file)) { }
-        else if (string_arg(&i, argc, argv, "-ours",     &merge_ours_file))     { }
-        else if (string_arg(&i, argc, argv, "-theirs",   &merge_theirs_file))   { }
+        else if (StringArg(&i, argc, argv, "-ancestor", &merge_ancestor_file)) { }
+        else if (StringArg(&i, argc, argv, "-ours",     &merge_ours_file))     { }
+        else if (StringArg(&i, argc, argv, "-theirs",   &merge_theirs_file))   { }
         else {
-            usage();
+            Usage();
             exit(EXIT_FAILURE);
         }
     }
 
     // Check for required options
     if ((mode != DIFF) && (mode != SELFTEST) && file_path.empty()) {
-        usage();
+        Usage();
         exit(EXIT_FAILURE);
     }
     if (access_map_file.empty()) {
-        usage();
+        Usage();
         exit(EXIT_FAILURE);
     }
 
     // We need the access map before we can process anything
-    read_access_map(access_map_file);
+    ReadAccessMap(access_map_file);
 
     switch (mode) {
     case CLEAN: {
@@ -1125,11 +1125,11 @@ int main(int argc, char** argv) {
         // (TBD -- really? not yet it doesn't...)
         // and whether it's in a protected directory where we must encrypt.
         string contents;
-        read_whole_file(stdin, &contents);
+        ReadWholeFile(stdin, &contents);
 
         // jcoiner: design this API so we can keep it when we switch to
         // a 'process' type filter (long lived process)
-        StringOut new_contents = filter_clean(file_path, contents);
+        StringOut new_contents = FilterClean(file_path, contents);
         if (!new_contents.get().empty()) {
             fwrite(new_contents.get().data(),
                    new_contents.get().size(), 1, stdout);
@@ -1140,8 +1140,8 @@ int main(int argc, char** argv) {
         // Smudge will decrypt files that were stored encrypted.
         //
         string in;
-        read_whole_file(stdin, &in);
-        StringOut out = filter_smudge(in, file_path);
+        ReadWholeFile(stdin, &in);
+        StringOut out = FilterSmudge(in, file_path);
         if (!out.get().empty()) {
             fwrite(out.get().data(), out.get().size(), 1, stdout);
         }
@@ -1149,27 +1149,27 @@ int main(int argc, char** argv) {
     }
     case DIFF: {
         string in;
-        read_whole_file(input_file.c_str(), &in);
-        StringOut out = filter_diff(in);
+        ReadWholeFile(input_file.c_str(), &in);
+        StringOut out = FilterDiff(in);
         if (!out.get().empty()) {
             fwrite(out.get().data(), out.get().size(), 1, stdout);
         }
         break;
     }
     case MERGE: {
-        bool ok = filter_merge(merge_ancestor_file,
-                               merge_ours_file,
-                               merge_theirs_file,
-                               file_path);
+        bool ok = FilterMerge(merge_ancestor_file,
+                              merge_ours_file,
+                              merge_theirs_file,
+                              file_path);
         exit(ok ? EXIT_SUCCESS : EXIT_FAILURE);
         break;
     }
     case SELFTEST: {
-        selftest(selftest_regold);
+        SelfTest(selftest_regold);
         break;
     }
     default:
-        usage();
+        Usage();
         exit(EXIT_FAILURE);
     }
     return EXIT_SUCCESS;
