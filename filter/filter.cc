@@ -1134,6 +1134,9 @@ int main(int argc, char** argv) {
 
     switch (mode) {
     case kClean: {
+        // Allow making clean fail for testing...
+        FLT_ASSERT(nullptr == getenv("GEL_FORCE_CLEAN_FAIL"));
+        
         // Clean will encrypt certain secret files.
         // Our behavior here depends on whether the file is text or binary
         // (TBD -- really? not yet it doesn't...)
