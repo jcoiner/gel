@@ -268,18 +268,24 @@ static const uint8_t* toBytesConst(const char* in) {
     return reinterpret_cast<const uint8_t*>(in);
 }
 
+struct Blob {
+    unsigned start_offset;
+    uint64_t hash;
+};
+
 static void
-findBlobStarts(const string& file_path,
-               const string& plaintext,
-               std::vector<unsigned>* blob_start_offsets) {
-    FLT_ASSERT(blob_start_offsets->empty());
+findBlobs(const string& file_path,
+          const string& plaintext,
+          std::vector<Blob>* blobs) {
+    FLT_ASSERT(blobs->empty());
     if (plaintext.empty()) {
         // empty file has zero blobs
         return;
     }
 
-    unsigned cur_blob_start = 0;
-    blob_start_offsets->push_back(cur_blob_start);
+    Blob cur_blob;
+    cur_blob.start_offset = 0;
+    // hash to be determined...
 
     constexpr unsigned min_blob_sz = 64;
 
@@ -294,7 +300,7 @@ findBlobStarts(const string& file_path,
     // of blob sizes (though not identical ciphertext)
     // and that could leak some data through to an attacker.
     //
-    unsigned init_hash = 0;
+    uint64_t init_hash = 0;
     for (unsigned i = 0; i<file_path.size(); i++) {
         init_hash = (init_hash * 31u) + file_path.at(i);
     }
@@ -305,7 +311,7 @@ findBlobStarts(const string& file_path,
     for ( unsigned cur_idx = 0;
           cur_idx < plaintext.size();
           cur_idx++ ) {
-        if ( (cur_idx - cur_blob_start) <= min_blob_sz ) {
+        if ( (cur_idx - cur_blob.start_offset) <= min_blob_sz ) {
             continue;
         }
 
@@ -321,7 +327,7 @@ findBlobStarts(const string& file_path,
         // At each tier, we look for bits_per_tier bits in the hash output.
         // So the likelihood of matching a span is
         // 1 in 2^(bits_per_tier*hash_span_tiers)
-        unsigned hash = init_hash;
+        uint64_t hash = init_hash;
         unsigned chars_hashed = 0;
         for (unsigned tier = 0; tier < hash_span_tiers; tier++) {
             while (chars_hashed < hash_span[tier]) {
@@ -334,13 +340,29 @@ findBlobStarts(const string& file_path,
                 goto continue_outer_loop;
             }
         }
-        // Matched all tiers -- select a new blob start.
-        cur_blob_start = cur_idx;
-        blob_start_offsets->push_back(cur_blob_start);
+        // Matched all tiers -- we'll start a new blob here.
+        // But first, assign and retire the blob we were working on
+        // that we finally have the hash for...
+        cur_blob.hash = hash;
+        blobs->push_back(cur_blob);
+
+        cur_blob.start_offset = cur_idx;
+        cur_blob.hash = 0;
 
     continue_outer_loop:
         ;
     }
+
+    // For the final blob -- we don't have a valid hash yet,
+    // so make one by going over the entire final blob, and then
+    // record this blob in the list.
+    uint64_t final_hash = init_hash;
+    for (unsigned cur_idx = cur_blob.start_offset;
+         cur_idx < plaintext.size(); cur_idx++) {
+        final_hash = (final_hash * 31u) + plaintext.at(cur_idx);
+    }
+    cur_blob.hash = final_hash;
+    blobs->push_back(cur_blob);
 }
 
 // Low level routine over AES library, decrypts one blob.
@@ -348,21 +370,20 @@ findBlobStarts(const string& file_path,
 // initially empty.
 static void
 decrypt_blob(const string& key,  // 16 bytes
-             const string& iv,   // 16 bytes
-             const string* blob,
+             const filter::Blob& blob,
              string* result) {
     FLT_ASSERT(16 == key.size());
-    FLT_ASSERT(16 == iv.size());
+    FLT_ASSERT(16 == blob.iv().size());
     FLT_ASSERT(16 == CryptoPP::AES::DEFAULT_KEYLENGTH);
 
     CryptoPP::AES::Decryption aesDecryption
         (toBytesConst(key.data()), CryptoPP::AES::DEFAULT_KEYLENGTH);
     CryptoPP::CBC_Mode_ExternalCipher::Decryption cbcDecryption
-        (aesDecryption, toBytesConst(iv.data()));
+        (aesDecryption, toBytesConst(blob.iv().data()));
 
     CryptoPP::StreamTransformationFilter stfDecryptor
         (cbcDecryption, new CryptoPP::StringSink(*result));
-    stfDecryptor.Put( toBytesConst(blob->c_str()), blob->size() );
+    stfDecryptor.Put( toBytesConst(blob.data().data()), blob.data().size() );
     stfDecryptor.MessageEnd();
 }
 
@@ -376,7 +397,7 @@ encrypt_blob(const string& key,  // 16 bytes
     FLT_ASSERT(ciphered_blob->empty());
 
     FLT_ASSERT(16 == CryptoPP::AES::DEFAULT_KEYLENGTH);
-    
+
     // Based on
     // https://stackoverflow.com/questions/12306956/example-of-aes-using-crypto
 
@@ -391,11 +412,11 @@ encrypt_blob(const string& key,  // 16 bytes
 }
 
 static void
-hash_file_path_to_iv(const string& file_path,
-                     string* iv /* 16 bytes */) {
+hash_string_to_iv(const string& in,
+                  string* iv /* 16 bytes */) {
     char buf[16];
     CryptoPP::SHA3(16).CalculateDigest
-        (toBytes(buf), toBytesConst(file_path.data()), file_path.size());
+        (toBytes(buf), toBytesConst(in.data()), in.size());
     iv->assign(buf, 16);
 }
 
@@ -461,7 +482,7 @@ void filter_clean(const string& file_path,
 
     // Compute the IV for this file.
     string file_iv;
-    hash_file_path_to_iv(file_path, &file_iv);
+    hash_string_to_iv(file_path, &file_iv);
 
     filter::CipheredFile ciphered;
     unsigned key_index = key_list->key_size() - 1;
@@ -472,14 +493,18 @@ void filter_clean(const string& file_path,
     const string& key = key_list->key(key_index).key_bytes();
     FLT_ASSERT(key.size() == 16);
 
-    std::vector<unsigned> blob_start_offsets;
-    findBlobStarts(file_path, contents, &blob_start_offsets);
+    std::vector<Blob> blobs;
+    findBlobs(file_path, contents, &blobs);
 
-    for (unsigned idx = 0; idx < blob_start_offsets.size(); idx++) {
-        unsigned offset = blob_start_offsets[idx];
+    unordered_map<uint64_t /* blob hash */,
+                  unsigned /* count of blobs with this hash so far */>
+        blob_hash_ct;
+
+    for (unsigned idx = 0; idx < blobs.size(); idx++) {
+        unsigned offset = blobs[idx].start_offset;
         unsigned len;
-        if ((idx + 1) < blob_start_offsets.size()) {
-            len = blob_start_offsets[idx+1] - offset;
+        if ((idx + 1) < blobs.size()) {
+            len = blobs[idx+1].start_offset - offset;
         } else {
             len = contents.size() - offset;
         }
@@ -487,11 +512,37 @@ void filter_clean(const string& file_path,
         printf("\nblob[%d]= ", len);
         fwrite(contents.data() + offset, 1, len, stdout);
 #endif
+
+        // Fold in the blob hash, and the count of blobs
+        // with same hash seen so far, and the file_iv,
+        // all together into a truly unique IV for this blob.
+        //
+        // Thus, even if sections of data repeat in the file,
+        // we won't expose this fact to an observer without the key.
+        //
+        // To ensure this happens in a stable way across little/big
+        // endian machines, rely on protobuf serialization:
+        uint64_t hash = blobs[idx].hash;
+        uint32_t hash_ct = blob_hash_ct[hash]++;
+
+        filter::BlobIvRaw iv_raw;
+        iv_raw.set_hash(hash);
+        iv_raw.set_count(hash_ct);
+        iv_raw.set_file_iv(file_iv);
+
+        string blob_iv_string;
+        iv_raw.SerializeToString(&blob_iv_string);
+
+        string blob_iv;  // 16 byte digest
+        hash_string_to_iv(blob_iv_string, &blob_iv);
+
         string ciphered_blob;
-        encrypt_blob(key, file_iv,
+        encrypt_blob(key, blob_iv,
                      toBytesConst(contents.data() + offset), len,
                      &ciphered_blob);
-        ciphered.add_b(ciphered_blob);
+        filter::Blob* bl = ciphered.add_blob();
+        bl->set_data(ciphered_blob);
+        bl->set_iv(blob_iv);
     }
 
     // Q) Does the proto library guarantee that fields will be written
@@ -539,15 +590,11 @@ filter_smudge(const string& clean_contents,
     }
     FLT_ASSERT(ciphered.key_index() < key_list->key_size());
 
-    // Compute the IV for this file
-    string file_iv;
-    hash_file_path_to_iv(ciphered.file_path(), &file_iv);
-
     const string& key = key_list->key(ciphered.key_index()).key_bytes();
     FLT_ASSERT(key.size() == 16);
 
-    for (const string& blob : ciphered.b()) {
-        decrypt_blob(key, file_iv, &blob, result);
+    for (const auto& blob : ciphered.blob()) {
+        decrypt_blob(key, blob, result);
     }
 }
 
@@ -805,6 +852,37 @@ test_stable_smudge(const string& old_ciphered_file,
     FLT_ASSERT(expect_plaintext == plaintext_out);
 }
 
+static void
+test_semantic_security() {
+    // In a single file with repeating text, ensure we produce unique
+    // IVs for each blob.
+
+    string plaintext;
+    for (unsigned i = 0; i < 256; i++) {
+        // Oops: this text doesn't trigger any blob starts! which we need for this
+        // test to work.
+        //plaintext.append("All work and no play makes Jack a dull boy.\n");
+        // This text has at least one blob trigger:
+        plaintext.append("Though the spirit of the proverb had been expressed previously, the modern saying appeared first in James Howell's Proverbs in English, Italian, French and Spanish (1659),[1] and was included in later collections of proverbs. It also appears in Howell's Paroimiographia (1659), p. 12. ");
+    }
+    string ciphertext;
+    filter_clean("secret/file", plaintext, &ciphertext);
+
+    // Ensure that no two blobs have the same IV.
+    filter::CipheredFile ciphered;
+    FLT_ASSERT(ciphered.ParseFromString(ciphertext));
+
+    std::unordered_set<string> ivs;
+    unsigned ct = 0;
+    for (const auto& blob : ciphered.blob()) {
+        FLT_ASSERT(ivs.find(blob.iv()) == ivs.end());
+        ivs.insert(blob.iv());
+        ct++;
+    }
+    // Double check that we really got a large set of blobs.
+    FLT_ASSERT(ct > 127);
+}
+
 static void selftest(bool regold) {
     // For each file, cipher it and decipher it.
     //
@@ -905,6 +983,10 @@ static void selftest(bool regold) {
                false,  // expect auto merge ok
                false,  // apply encrypt/decrypt
                regold);
+
+    // Confirm that an input file with repeating sections does
+    // not produce repeating sections in the ciphered file.
+    test_semantic_security();
 }
 
 static bool string_arg(int* ip,

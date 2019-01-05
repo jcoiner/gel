@@ -79,6 +79,19 @@ message AccessMap {
   map<string, Entry> map = 1;
 }
 
+message BlobIvRaw {
+  // NOTE -- this message type is only used internally in filter.cc,
+  // it's never written out.
+  fixed64 hash = 1;
+  int32 count = 2;
+  bytes file_iv = 3;
+}
+
+message Blob {
+  bytes iv = 1;   // exactly 16 bytes
+  bytes data = 2;
+}
+
 message CipheredFile {
   // A short, magic, constant string.
   // This is always first in the serialized file, it allows us to
@@ -89,7 +102,7 @@ message CipheredFile {
   int32 key_index = 2;
 
   // Opaque, encrypted blobs
-  repeated bytes b = 3;
+  repeated Blob blob = 3;
 
   // Path of the file in the repo.
   // We need this to support the 'textconv' filter, where the path

@@ -94,13 +94,12 @@ The schemas used by the gel filter are defined in `filter/filter.proto`. The `-a
 How do we ensure that local edits to the plaintext file result in local diffs in the ciphered file?
 
 The cipher works as follows:
- * For each file, start with an IV (initialization vector) which is based on a hash of the file's path in the repo. This should be a unique value for each file.
- * Split the plaintext into variable sized "blobs", each of which must be at least 64 bytes. A trigger function in `findBlobStarts()` decides where to split the plaintext. At each position in the file, the trigger function looks backward at a span of the previous 64 bytes, and hashes those bytes. (It also hashes in the unique IV for the file.) The hash has a 1/128 chance of selecting a new blob start.
+ * Split the plaintext into variable sized "blobs", each of which must be at least 64 bytes. A trigger function in `findBlobs()` decides where to split the plaintext. At each position in the file, the trigger function looks backward at a span of the previous 64 bytes, and hashes those bytes. (It also hashes in the path for the file.) The hash has a 1/128 chance of selecting a new blob start on any given byte.
    The trigger function will tend to identify a stable set of blobs, even after small edits in a large file, so the ciphered file can deltify nicely.
- * Each blob is independently run through an AES CBC cipher, seeded with the file's IV.
+ * Each blob is independently run through an AES CBC cipher. The cipher is seeded with an IV derived from a hash of the path to the file; the hash of the blob contents; and the count of blobs seen so far with the same hash. (The last term ensures that repeated, identical plaintext blobs will use different IVs, so no relationship will be observable to someone without the key.)
  * Ciphered blobs are packed into the CipheredFile proto.
 
-It's possible for an attacker to recognize repeated sections within a single file. Though it should be impossible for them to recognize sections common to two different files, since the file path is part of the IV and also part of the hash function used to split blobs. Two identical files with different paths should produce entirely different ciphertexts, even the sizes of the blobs should have no relationship.
+It should be impossible for at attacker to recognize sections that repeat in the same file, or sections which are common to two different files, since the file path is part of each IV and also part of the hash function used to split blobs. Two identical files with different paths should produce entirely different ciphertexts, even the sizes of the blobs should have no relationship.
 
 ## TO DO
 
