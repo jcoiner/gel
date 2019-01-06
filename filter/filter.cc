@@ -643,16 +643,35 @@ FilterSmudge(const string& clean_contents,
         return StringOut(&clean_contents);
     }
 
+    // If we have an expected file_path (smudge case) look up the key list
+    // and exit before sniffing the file if the path is unprotected.
+    //
+    // This matters in the (presumably uncommon) corner case where a file
+    // in an unprotected directory carries the magic prefix. We encounter
+    // this case in the filter's test/ directory where a ciphered binary
+    // is committed (that is, the plaintext view is a ciphered binary,
+    // if that makes sense...)
+    const filter::KeyList* key_list = nullptr;
+    if (!file_path.empty()) {
+        key_list = FindKeyList(file_path);
+        if (!key_list) {
+            return StringOut(&clean_contents);
+        }
+    }
+
     filter::CipheredFile ciphered;
     FLT_ASSERT(ciphered.ParseFromString(clean_contents));
 
-    // If we're running in smudge filter context where we expect
-    // a certain file path, it should match:
+    // In the smudge case, we expect a certain file path, it should match
+    // the one from the ciphered binary:
     if (!file_path.empty()) {
         FLT_ASSERT(file_path == ciphered.file_path());
     }
 
-    const filter::KeyList* key_list = FindKeyList(ciphered.file_path());
+    // In the diff case, this is our first opportunity to look up the key_list
+    if (!key_list) {
+        key_list = FindKeyList(ciphered.file_path());
+    }
     if (nullptr == key_list) {
         return StringOut(&clean_contents);
     }
