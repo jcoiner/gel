@@ -119,16 +119,14 @@ The encrypted format is not tamper-proof. Without the key, an attacker could rem
 
 I haven't thought about what would be involved to "chain" the gel filters with some other smudge/clean filters. I haven't thought about whether the gel filter is compatible with every other git feature and user-configurable extension possible. I tested with a vanilla setup.
 
-## Committing Secrets as Plaintext :(
+## TBD: How to Stop Users from Committing Secrets as Plaintext?
 
-A particular area of risk is the possibility of secrets being committed as plaintext.
+Consider a corporate environment, where thousands of users all share a central monorepo. We can make mistakes at scale.
 
-For these scenarios, consider a corporate environment, where thousands of users all share a central monorepo. The large number of users opens us up to mistakes at scale.
-
-Committed plaintext could happen in a few ways:
- * An accidental (or socially engineered?) change to `.git/config` or `.gitattributes` removes the filters.
+A particular risk is the possibility of secrets being committed as plaintext and pushed. This could happen in a few ways:
+ * An accidental (or socially engineered?) change to `.git/config` or `.gitattributes` disables or removes the filters.
  * An accidental change to the AccessMap removes encryption for a part of the repo.
- * The `required` line in the `.git/config` file _should_ cause git to fail a commit operation if the clean filter fails. (Without that line, git will happily and silently commit plaintext to the repo if the filter exits with bad status.) Git's not strongly designed around this use case, so is that an ironclad guarantee?
+ * The `required` line in the `.git/config` file _should_ cause git to fail a commit operation if the clean filter fails. (Without that line, git will happily and silently commit plaintext to the repo if the filter exits with bad status.) Git's not strongly designed for security, so is that an ironclad guarantee?
 
 Most likely, in a corporate environment, it would be important to defend against a committed-plaintext failure by rejecting such pushes at the central repo. Can an update hook do that?
 
@@ -138,4 +136,4 @@ TODO: develop such an update hook.
 
 A related risk: the encrypting filter is maybe a little _too_ transparent! It's not obvious which directories are protected and which are not. Some users may not be aware of the security boundary at all. You could imagine a well-intentioned user copying secrets from a protected directory to an unprotected one and committing it. That seems more likely than the user knowing about the AccessMap file and being able to read it.
 
-And while we can't prevent people with legitimate read access from taking secrets out and sharing them illegitimately, it would be nice to make the security boundaries more visible (how?) so this is less likely to happen by accident. Alternatively, we could protect against this with an update hook: we could embed a particular constant string in comments of most secret files, and then reject any push containing this string as plaintext. Such a comment may also educate users, too, if it's worded well.
+And while we can't prevent people with legitimate read access from taking secrets out and sharing them illegitimately, it would be nice to make the security boundaries more visible (how?) so this is less likely to happen by accident. Alternatively, we could protect against this with an update hook: we could embed a particular constant string in comments of most secret files, and then reject any push containing this string as plaintext. Such a comment may give users the missing visibility, if it's worded well.
