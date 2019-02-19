@@ -187,6 +187,10 @@ static const filter::KeyList* ReadKeyList(const string& keylist_file) {
         return it->second.get();
     }
 
+    // BOZO: should check here whether the keylist file is readable,
+    //  and if not (due to EPERM) then silently fall back to no-encryption.
+    //  This would be the typical case, for permission being denied.
+
     keylist_map[keylist_file].reset(new filter::KeyList);
     string keylist_text;
     ReadWholeFile(keylist_file, &keylist_text);
