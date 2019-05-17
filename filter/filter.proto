@@ -40,6 +40,20 @@ message KeyList {
   // months, something like that) so it will be a long time before
   // linear growth of the key list poses a scaling problem.
   repeated Key key = 1;
+
+  enum Mode {
+    // Normal, bidirectional mode,
+    // in which "smudge" and "clean" are complementary operations.
+    BIDIR = 0;
+
+    // In DECRYPT_ONLY mode, smudge will still decrypt ciphered contents
+    // but clean will no re-cipher them! This is suitable when a
+    // directory no longer needs to be protected -- it allows future edits
+    // to that directory to become plaintext, while still supporting older
+    // entries that are ciphered.
+    DECRYPT_ONLY = 1;
+  }
+  Mode mode = 2;
 }
 
 // NOTE:

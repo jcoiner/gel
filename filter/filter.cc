@@ -551,6 +551,9 @@ FilterClean(const string& file_path,
     if (nullptr == key_list) {
         return StringOut(&contents);
     }
+    if (key_list->mode() == filter::KeyList::DECRYPT_ONLY) {
+        return StringOut(&contents);
+    }
 
     // If the file has already been ciphered, pass through.
     if (HasMagicPrefix(contents)) {
